@@ -27,43 +27,17 @@ jobs:
       - name: Type check
         run: bun run build
 
-      - name: Run tests
-        run: bun test
+      - name: Run tests (skip if no test files)
+        run: |
+          if [ -f "$(find . -name '*.test.ts' -o -name '*.spec.ts' 2>/dev/null | head -1)" ]; then
+            bun test
+          else
+            echo "No test files found, skipping tests"
+          fi
 
       - name: Publish to npm
         run: |
-          # Configure npm for provenance
           npm config set provenance true
-          
-          # Publish to npm
           npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-  # Also publish to GitHub Packages as backup
-  github-packages:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
-      - name: Install dependencies
-        run: bun install
-
-      - name: Type check
-        run: bun run build
-
-      - name: Publish to GitHub Packages
-        run: |
-          echo "registry=https://npm.pkg.github.com" > .npmrc
-          echo "//npm.pkg.github.com/:_authToken=${{ secrets.GITHUB_TOKEN }}" >> .npmrc
-          npm publish --access public
