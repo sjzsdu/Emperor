@@ -1,0 +1,98 @@
+import { existsSync, readFileSync } from "node:fs"
+import { join } from "node:path"
+import type { AgentConfig } from "@opencode-ai/sdk"
+import type { EmperorConfig } from "./types"
+
+const DEFAULT_AGENTS: Record<string, AgentConfig> = {
+  taizi: {
+    mode: "primary",
+    prompt: "TODO: Add system prompt in Task 3",
+    description: "太子·入口分拣",
+  },
+  zhongshu: {
+    mode: "subagent",
+    prompt: "TODO: Add system prompt in Task 3",
+    description: "中书省·规划",
+    tools: { read: true, grep: true, glob: true },
+  },
+  menxia: {
+    mode: "subagent",
+    prompt: "TODO: Add system prompt in Task 3",
+    description: "门下省·审核",
+    tools: { read: true },
+  },
+  bingbu: {
+    mode: "subagent",
+    prompt: "TODO: Add system prompt in Task 3",
+    description: "兵部·代码实现",
+  },
+  gongbu: {
+    mode: "subagent",
+    prompt: "TODO: Add system prompt in Task 3",
+    description: "工部·基建",
+  },
+  libu: {
+    mode: "subagent",
+    prompt: "TODO: Add system prompt in Task 3",
+    description: "礼部·文档",
+  },
+  xingbu: {
+    mode: "subagent",
+    prompt: "TODO: Add system prompt in Task 3",
+    description: "刑部·安全审计",
+    tools: { read: true, grep: true },
+  },
+  hubu: {
+    mode: "subagent",
+    prompt: "TODO: Add system prompt in Task 3",
+    description: "户部·数据与测试",
+  },
+}
+
+const DEFAULT_CONFIG: EmperorConfig = {
+  agents: DEFAULT_AGENTS,
+  pipeline: {
+    maxReviewAttempts: 3,
+    sensitivePatterns: [
+      "删除|remove|delete|drop",
+      "数据库.*迁移|migration",
+      "密钥|secret|credential|password",
+      "生产环境|production|deploy",
+      "权限|permission|auth.*config",
+    ],
+  },
+  store: {
+    dataDir: ".opencode/plugins/emperor/data",
+  },
+}
+
+/**
+ * Load Emperor configuration from .opencode/emperor.json.
+ * Returns defaults if the file doesn't exist or is malformed.
+ * Merges user overrides with defaults at the top level.
+ */
+export function loadConfig(directory: string): EmperorConfig {
+  const configPath = join(directory, ".opencode", "emperor.json")
+
+  let userConfig: Partial<EmperorConfig> = {}
+  try {
+    if (existsSync(configPath)) {
+      const raw = readFileSync(configPath, "utf-8")
+      userConfig = JSON.parse(raw) as Partial<EmperorConfig>
+    }
+  } catch {
+    // Ignore parse errors — fall back to defaults
+  }
+
+  return {
+    agents: userConfig.agents
+      ? { ...DEFAULT_CONFIG.agents, ...userConfig.agents }
+      : DEFAULT_CONFIG.agents,
+    pipeline: userConfig.pipeline
+      ? { ...DEFAULT_CONFIG.pipeline, ...userConfig.pipeline }
+      : DEFAULT_CONFIG.pipeline,
+    store: userConfig.store
+      ? { ...DEFAULT_CONFIG.store, ...userConfig.store }
+      : DEFAULT_CONFIG.store,
+  }
+}
