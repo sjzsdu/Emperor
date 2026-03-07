@@ -56,9 +56,9 @@ export const EmperorPlugin: Plugin = async ({ client, directory }) => {
       }
     },
     tool: {
-      "下旨": createEdictTool(client, store, config),
-      "查看奏折": createMemorialTool(store),
-      "叫停": createHaltTool(client, store),
+      "edict": createEdictTool(client, store, config),
+      "memorial": createMemorialTool(store),
+      "halt": createHaltTool(client, store),
     },
   }
 }
