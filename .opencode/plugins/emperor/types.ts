@@ -14,7 +14,7 @@ export type EdictStatus =
   | "failed"         // 执行失败
   | "halted"         // 用户叫停
 
-export type DepartmentId = "bingbu" | "gongbu" | "libu" | "xingbu" | "hubu"
+export type DepartmentId = "bingbu" | "gongbu" | "lifebu" | "xingbu" | "hubu" | "libu"
 
 export interface Edict {
   id: string

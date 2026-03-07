@@ -193,6 +193,52 @@ graph TD
     ├── store.ts                         # 圣旨数据持久化
     ├── agents/
     │   └── prompts.ts                   # 八部 Agent 系统提示词
+    ├── skills/                          # 📚 插件内置 Skills
+    │   ├── taizi-reloaded/              # 太子增强版（判断-执行分离）
+    │   ├── quick-verify/                # 快速验证技能
+    │   ├── hubu-tester/                 # 户部测试官
+    │   └── menxia-reviewer/             # 门下省审核官
+    ├── engine/
+    │   ├── pipeline.ts                  # 流转引擎主流程
+    │   ├── reviewer.ts                  # 门下省审核 + 敏感操作检测
+    │   └── dispatcher.ts               # 六部调度（拓扑排序 + 并行执行）
+    └── tools/
+        ├── edict.ts                     # 下旨工具
+        ├── memorial.ts                  # 查看奏折工具
+        └── halt.ts                      # 叫停工具
+```
+
+## 内置 Skills
+
+插件自带以下增强版 Skills，安装插件后自动启用：
+
+| Skill | 说明 |
+|-------|------|
+| `taizi-reloaded` | 太子增强版，强调判断-执行分离和验证优先 |
+| `quick-verify` | 快速验证技能，强制交付前验证 |
+| `hubu-tester` | 户部测试官，完善的验证报告模板 |
+| `menxia-reviewer` | 门下省审核官，增加代码安全审查 |
+
+### 使用方式
+
+```
+@skill taizi-reloaded
+@skill quick-verify
+@skill hubu-tester
+@skill menxia-reviewer
+```
+
+```
+.opencode/
+├── emperor.json                         # 插件配置
+├── opencode.json                        # OpenCode 配置（注册插件）
+└── plugins/emperor/
+    ├── index.ts                         # 插件入口
+    ├── types.ts                         # 类型定义
+    ├── config.ts                        # 配置加载器
+    ├── store.ts                         # 圣旨数据持久化
+    ├── agents/
+    │   └── prompts.ts                   # 八部 Agent 系统提示词
     ├── engine/
     │   ├── pipeline.ts                  # 流转引擎主流程
     │   ├── reviewer.ts                  # 门下省审核 + 敏感操作检测

@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from "node:fs"
-import { join } from "node:path"
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs"
+import { join } from "path"
 import type { AgentConfig } from "@opencode-ai/sdk"
 import type { EmperorConfig } from "./types"
 
@@ -31,7 +31,7 @@ const DEFAULT_AGENTS: Record<string, AgentConfig> = {
     prompt: "TODO: Add system prompt in Task 3",
     description: "工部·基建",
   },
-  libu: {
+  lifebu: {
     mode: "subagent",
     prompt: "TODO: Add system prompt in Task 3",
     description: "礼部·文档",
@@ -46,6 +46,12 @@ const DEFAULT_AGENTS: Record<string, AgentConfig> = {
     mode: "subagent",
     prompt: "TODO: Add system prompt in Task 3",
     description: "户部·数据与测试",
+  },
+  libu: {
+    mode: "subagent",
+    prompt: "TODO: Add system prompt in Task 3",
+    description: "吏部·架构与重构",
+    tools: { read: true, grep: true, glob: true },
   },
 }
 
@@ -70,11 +76,27 @@ const DEFAULT_CONFIG: EmperorConfig = {
  * Load Emperor configuration from .opencode/emperor.json.
  * Returns defaults if the file doesn't exist or is malformed.
  * Merges user overrides with defaults at the top level.
+ * If config file doesn't exist, creates it with default values.
  */
 export function loadConfig(directory: string): EmperorConfig {
-  const configPath = join(directory, ".opencode", "emperor.json")
+  const configDir = join(directory, ".opencode")
+  const configPath = join(configDir, "emperor.json")
 
   let userConfig: Partial<EmperorConfig> = {}
+  
+  // If config doesn't exist, create it with defaults
+  if (!existsSync(configPath)) {
+    try {
+      if (!existsSync(configDir)) {
+        mkdirSync(configDir, { recursive: true })
+      }
+      // Write default config to file
+      writeFileSync(configPath, JSON.stringify(DEFAULT_CONFIG, null, 2))
+    } catch {
+      // Ignore errors — will use defaults
+    }
+  }
+  
   try {
     if (existsSync(configPath)) {
       const raw = readFileSync(configPath, "utf-8")

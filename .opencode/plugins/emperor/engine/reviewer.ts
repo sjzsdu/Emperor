@@ -2,6 +2,20 @@ import type { OpencodeClient } from "@opencode-ai/sdk"
 import type { Part } from "@opencode-ai/sdk"
 import type { Edict, Plan, Review } from "../types"
 
+const regexCache = new Map<string, RegExp>()
+
+function getRegex(pattern: string): RegExp | null {
+  const cached = regexCache.get(pattern)
+  if (cached) return cached
+  try {
+    const regex = new RegExp(pattern, "i")
+    regexCache.set(pattern, regex)
+    return regex
+  } catch {
+    return null
+  }
+}
+
 function extractText(parts: Part[]): string {
   return parts
     .filter((p): p is Extract<Part, { type: "text" }> => p.type === "text")
@@ -54,16 +68,12 @@ function parseReview(text: string): Review {
 export function detectSensitiveOps(plan: Plan, patterns: string[]): string[] {
   const detected: string[] = []
   for (const pattern of patterns) {
-    let regex: RegExp
-    try {
-      regex = new RegExp(pattern, "i")
-    } catch {
-      continue
-    }
+    const regex = getRegex(pattern)
+    if (!regex) continue
     for (const subtask of plan.subtasks) {
       if (regex.test(subtask.title) || regex.test(subtask.description)) {
         detected.push(`"${subtask.title}" 匹配敏感模式: ${pattern}`)
-        break // One match per pattern is enough
+        break
       }
     }
   }

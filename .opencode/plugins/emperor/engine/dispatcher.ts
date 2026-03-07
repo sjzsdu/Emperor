@@ -5,9 +5,10 @@ import type { DepartmentId, Edict, Execution, Plan, Subtask } from "../types"
 const DEPT_NAMES: Record<DepartmentId, string> = {
   bingbu: "兵部",
   gongbu: "工部",
-  libu: "礼部",
+  lifebu: "礼部",
   xingbu: "刑部",
   hubu: "户部",
+  libu: "吏部",
 }
 
 function extractText(parts: Part[]): string {
