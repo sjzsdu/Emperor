@@ -6,36 +6,43 @@
 
 ```mermaid
 graph TD
-    User["用户下旨"] --> Taizi["太子<br/>分诊定性"]
+    User["用户下旨"] --> Taizi["太子<br/>统筹分诊"]
     Taizi --> Zhongshu["中书省<br/>拟定方案"]
     Zhongshu --> Menxia["门下省<br/>审核封驳"]
     Menxia -->|驳回| Zhongshu
-    Menxia -->|通过| Dispatch["六部并行执行"]
-    Dispatch --> Libu["吏部<br/>架构重构"]
-    Dispatch --> Hubu["户部<br/>数据存储"]
-    Dispatch --> Libu2["礼部<br/>API接口"]
-    Dispatch --> Bingbu["兵部<br/>安全测试"]
-    Dispatch --> Gongbu["工部<br/>基础设施"]
-    Libu --> Memorial["奏折<br/>汇总回报"]
+    Menxia -->|通过| Shangshu["尚书省<br/>执行总调度"]
+    Shangshu --> Libu["吏部<br/>架构重构"]
+    Shangshu --> Hubu["户部<br/>测试验证"]
+    Shangshu --> Libu2["礼部<br/>API文档"]
+    Shangshu --> Bingbu["兵部<br/>安全测试"]
+    Shangshu --> Xingbu["刑部<br/>安全审计"]
+    Shangshu --> Gongbu["工部<br/>基础设施"]
+    Libu --> Memorial["尚书省<br/>汇总奏折"]
     Hubu --> Memorial
     Libu2 --> Memorial
     Bingbu --> Memorial
+    Xingbu --> Memorial
     Gongbu --> Memorial
+    Memorial --> Taizi
 ```
 
-**完整流程**：用户下旨 → 太子分诊 → 中书省规划 → 门下省审核 → 六部并行执行 → 奏折回报
+**完整流程**：用户下旨 → 太子分诊 → 中书省规划 → 门下省审核 → 尚书省调度 → 六部并行执行 → 尚书省汇总奏折 → 太子验收
 
-## 八部Agent
+**核心规则**：太子只与三省（中书省、门下省、尚书省）沟通，绝不直接找六部派活。
+
+## 十部 Agent
 
 | Agent | 角色 | 职责 |
 |-------|------|------|
-| **太子** (taizi) | 分诊官 | 接收用户请求，分析任务性质，转发给中书省 |
+| **太子** (taizi) | 分诊官 | 接收用户请求，分析任务性质，只与三省沟通 |
 | **中书省** (zhongshu) | 规划师 | 将任务拆解为子任务，分配给对应六部，输出结构化 JSON 方案 |
 | **门下省** (menxia) | 审查官 | 审核中书省方案的合理性、风险和依赖关系，可封驳退回 |
+| **尚书省** (shangshu) | 执行总调度 | 接收审核通过的方案，调度六部并行执行，监控进度，汇总奏折 |
 | **吏部** (libu) | 架构师 | 负责代码架构、重构、类型系统、模块设计 |
-| **户部** (hubu) | 数据官 | 负责数据库、状态管理、缓存、数据迁移 |
+| **户部** (hubu) | 测试官 | 负责测试与验证，确保代码能正常工作（强制参与） |
 | **礼部** (libu2) | 接口官 | 负责 API 设计、协议对接、文档编写 |
-| **兵部** (bingbu) | 安全官 | 负责测试、安全审计、性能优化、错误处理 |
+| **兵部** (bingbu) | 安全官 | 负责安全测试、性能优化、错误处理 |
+| **刑部** (xingbu) | 审计官 | 负责安全审计、合规检查、漏洞扫描（只读，不修改代码） |
 | **工部** (gongbu) | 工程师 | 负责构建工具、CI/CD、部署、环境配置 |
 
 ## 自定义工具
@@ -96,16 +103,20 @@ graph TD
     "taizi": { "model": "anthropic/claude-sonnet-4-20250514" },
     "zhongshu": { "model": "anthropic/claude-sonnet-4-20250514" },
     "menxia": { "model": "anthropic/claude-sonnet-4-20250514" },
+    "shangshu": { "model": "anthropic/claude-sonnet-4-20250514" },
     "libu": { "model": "anthropic/claude-sonnet-4-20250514" },
     "hubu": { "model": "anthropic/claude-sonnet-4-20250514" },
     "libu2": { "model": "anthropic/claude-sonnet-4-20250514" },
     "bingbu": { "model": "anthropic/claude-sonnet-4-20250514" },
+    "xingbu": { "model": "anthropic/claude-sonnet-4-20250514" },
     "gongbu": { "model": "anthropic/claude-sonnet-4-20250514" }
   },
   "pipeline": {
     "maxPlanningRetries": 3,
     "reviewMode": "mixed",
-    "sensitivePatterns": ["删除", "drop", "rm -rf", "production", "密钥", "credentials"]
+    "sensitivePatterns": ["删除", "drop", "rm -rf", "production", "密钥", "credentials"],
+    "mandatoryDepartments": ["hubu"],
+    "requirePostVerification": true
   },
   "store": {
     "dataDir": ".opencode/emperor-data"
@@ -122,6 +133,8 @@ graph TD
   - `manual` — 所有操作都需人工确认
   - `mixed` — 默认自动，检测到敏感操作时转为人工（推荐）
 - **pipeline.sensitivePatterns**: 触发人工审核的关键词列表
+- **pipeline.mandatoryDepartments**: 强制参与的部门列表（默认 `["hubu"]`），中书省方案中必须包含这些部门，否则门下省将自动驳回
+- **pipeline.requirePostVerification**: 是否在六部执行完成后进行户部后置验证（默认 `true`）
 - **store.dataDir**: 圣旨数据持久化目录
 
 ## 使用方式
@@ -164,6 +177,10 @@ graph TD
 2. 弹出确认对话框，需用户手动批准
 3. 用户可选择批准或驳回
 
+### 强制部门参与
+
+通过 `mandatoryDepartments` 配置，可强制要求特定部门参与每次任务执行。默认要求户部（测试验证）参与，确保所有方案都经过测试。该检查在门下省审核阶段和代码层面同时执行，缺少必要部门的方案将被自动驳回。
+
 ### 依赖调度
 
 六部子任务支持依赖声明。调度引擎使用拓扑排序（Kahn 算法）将子任务分组为执行波次：
@@ -172,9 +189,18 @@ graph TD
 - **Wave 2**: 依赖 Wave 1 结果的子任务并行执行
 - **依此类推...**
 
+### 尚书省调度
+
+尚书省作为执行总调度，在门下省审核通过后接管流程：
+
+1. **预调度**：审查执行策略，确认资源分配
+2. **代码调度**：基于拓扑排序并行调度六部执行
+3. **后置验证**：可选的户部后置验证环节
+4. **汇总奏折**：AI 生成结构化奏折，汇报各部执行结果
+
 ### 奏折格式
 
-执行完成后，系统生成结构化奏折（Memorial），包含：
+执行完成后，尚书省生成结构化奏折（Memorial），包含：
 
 - 各部执行结果和状态
 - 成功/失败统计
@@ -192,15 +218,15 @@ graph TD
     ├── config.ts                        # 配置加载器
     ├── store.ts                         # 圣旨数据持久化
     ├── agents/
-    │   └── prompts.ts                   # 八部 Agent 系统提示词
-    ├── skills/                          # 📚 插件内置 Skills
+    │   └── prompts.ts                   # 十部 Agent 系统提示词
+    ├── skills/                          # 插件内置 Skills
     │   ├── taizi-reloaded/              # 太子增强版（判断-执行分离）
     │   ├── quick-verify/                # 快速验证技能
     │   ├── hubu-tester/                 # 户部测试官
     │   └── menxia-reviewer/             # 门下省审核官
     ├── engine/
-    │   ├── pipeline.ts                  # 流转引擎主流程
-    │   ├── reviewer.ts                  # 门下省审核 + 敏感操作检测
+    │   ├── pipeline.ts                  # 流转引擎主流程（含尚书省调度）
+    │   ├── reviewer.ts                  # 门下省审核 + 强制部门检查 + 敏感操作检测
     │   └── dispatcher.ts               # 六部调度（拓扑排序 + 并行执行）
     └── tools/
         ├── edict.ts                     # 下旨工具
@@ -226,27 +252,6 @@ graph TD
 @skill quick-verify
 @skill hubu-tester
 @skill menxia-reviewer
-```
-
-```
-.opencode/
-├── emperor.json                         # 插件配置
-├── opencode.json                        # OpenCode 配置（注册插件）
-└── plugins/emperor/
-    ├── index.ts                         # 插件入口
-    ├── types.ts                         # 类型定义
-    ├── config.ts                        # 配置加载器
-    ├── store.ts                         # 圣旨数据持久化
-    ├── agents/
-    │   └── prompts.ts                   # 八部 Agent 系统提示词
-    ├── engine/
-    │   ├── pipeline.ts                  # 流转引擎主流程
-    │   ├── reviewer.ts                  # 门下省审核 + 敏感操作检测
-    │   └── dispatcher.ts               # 六部调度（拓扑排序 + 并行执行）
-    └── tools/
-        ├── edict.ts                     # 下旨工具
-        ├── memorial.ts                  # 查看奏折工具
-        └── halt.ts                      # 叫停工具
 ```
 
 ## 技术栈

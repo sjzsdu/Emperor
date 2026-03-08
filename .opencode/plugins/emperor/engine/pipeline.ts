@@ -3,7 +3,7 @@ import type { Part } from "@opencode-ai/sdk"
 import type { ToolContext } from "@opencode-ai/plugin"
 import type { Edict, EdictStore, EmperorConfig, Execution, Plan } from "../types"
 import { reviewWithMenxia } from "./reviewer"
-import { dispatchAndExecute } from "./dispatcher"
+import { dispatchAndExecute, executeSubtask } from "./dispatcher"
 
 const DEPT_DISPLAY: Record<string, string> = {
   bingbu: "兵部",
@@ -58,6 +58,7 @@ function parsePlan(text: string, attempt: number): Plan {
   }
 }
 
+/** Phase 1a: 中书省 creates a plan */
 export async function planWithZhongshu(
   client: OpencodeClient,
   edict: Edict,
@@ -77,6 +78,11 @@ export async function planWithZhongshu(
 内容: ${edict.content}
 优先级: ${edict.priority}
 
+重要提醒：
+1. 请先分析用户场景和技术选型，再拆解子任务
+2. 必须包含户部（hubu）测试验证任务
+3. 技术选型需说明理由，优先考虑用户体验
+
 请输出严格的 Plan JSON。`
   } else {
     prompt = `上次规划方案被门下省封驳，原因如下：
@@ -87,6 +93,11 @@ ${rejectionReasons?.map((r) => `- ${r}`).join("\n") ?? "（无具体原因）"}
 标题: ${edict.title}
 内容: ${edict.content}
 优先级: ${edict.priority}
+
+重要提醒：
+1. 请认真对待封驳原因，针对性改进
+2. 必须包含户部（hubu）测试验证任务
+3. 技术选型需说明理由，优先考虑用户体验
 
 请输出严格的 Plan JSON，注意改进被指出的问题。`
   }
@@ -109,6 +120,169 @@ function checkAbort(abort: AbortSignal): void {
   }
 }
 
+/**
+ * Phase 2: 尚书省 coordinates execution.
+ *
+ * Shangshu has a persistent session with two touchpoints:
+ * - Turn 1 (pre-dispatch): Receives the approved plan, prepares execution strategy
+ * - Turn 2 (post-dispatch): Receives all execution results, generates memorial (奏折)
+ *
+ * The actual dispatch uses code-based topological sort + parallel execution for efficiency.
+ * Shangshu provides the AI intelligence layer on top.
+ */
+async function shangshuCoordinate(
+  client: OpencodeClient,
+  edict: Edict,
+  plan: Plan,
+  config: EmperorConfig,
+): Promise<{ executions: Execution[]; memorial: string }> {
+  // Create shangshu session — persistent across both turns
+  const session = await client.session.create({
+    body: { title: `尚书省·${edict.title}` },
+  })
+  const shangshuSessionId = session.data!.id
+
+  // --- Turn 1: Pre-dispatch — shangshu reviews execution strategy ---
+  const preDispatchPrompt = `门下省已准奏以下规划方案，请审视执行策略。
+
+## 旨意
+标题: ${edict.title}
+内容: ${edict.content}
+优先级: ${edict.priority}
+
+## 门下省准奏的规划方案
+${JSON.stringify(plan, null, 2)}
+
+请审视此方案的执行策略：
+1. 子任务的依赖关系是否正确？哪些可以并行？
+2. 有没有执行层面的风险点需要注意？
+3. 各部门之间需要什么协调？
+
+简要回复你的执行策略和注意事项。`
+
+  await client.session.prompt({
+    path: { id: shangshuSessionId },
+    body: {
+      agent: "shangshu",
+      parts: [{ type: "text" as const, text: preDispatchPrompt }],
+    },
+  })
+
+  // --- Code-based dispatch: topological sort + parallel execution ---
+  // This is shangshu's "下达" to the six departments, implemented efficiently via code
+  client.tui.showToast({ body: { message: "⚔️ 尚书省调度六部执行中...", variant: "info" } })
+  const executions = await dispatchAndExecute(client, edict, plan)
+
+  // --- Post-execution verification (if enabled) ---
+  if (config.pipeline.requirePostVerification) {
+    client.tui.showToast({ body: { message: "🔬 户部执行后验证中...", variant: "info" } })
+
+    const verificationSubtask = {
+      index: plan.subtasks.length,
+      department: "hubu" as const,
+      title: "执行后综合验证",
+      description: buildVerificationDescription(edict, plan, executions),
+      dependencies: [],
+      effort: "medium" as const,
+    }
+    const verification = await executeSubtask(client, edict, verificationSubtask)
+    executions.push(verification)
+  }
+
+  // --- Turn 2: Post-dispatch — shangshu generates memorial (奏折) ---
+  client.tui.showToast({ body: { message: "📋 尚书省汇总奏折中...", variant: "info" } })
+
+  const executionSummary = executions.map((exec) => {
+    const subtask = plan.subtasks.find((s) => s.index === exec.subtaskIndex)
+    const dept = DEPT_DISPLAY[exec.department] ?? exec.department
+    const title = subtask?.title ?? (exec.subtaskIndex >= plan.subtasks.length ? "执行后综合验证" : `子任务 ${exec.subtaskIndex}`)
+    const status = exec.status === "completed" ? "✅ 完成" : "❌ 失败"
+    const detail = exec.status === "completed" ? (exec.result ?? "（无详细输出）") : (exec.error ?? "未知错误")
+    return `### ${dept}: ${title}\n状态: ${status}\n${detail}`
+  }).join("\n\n")
+
+  const postDispatchPrompt = `六部执行已完成，请汇总以下结果，生成奏折呈报太子。
+
+## 各部执行结果
+
+${executionSummary}
+
+## 奏折要求
+
+请生成完整奏折，包含以下部分：
+1. **旨意回顾** — 原始需求概述
+2. **规划方案概述** — 中书省方案的核心思路
+3. **执行结果** — 各部门的执行详情和状态
+4. **风险与遗留** — 未解决的问题、潜在风险
+5. **总结** — 整体评估：成功率、质量判断、后续建议
+
+请直接输出奏折内容（Markdown格式），不需要JSON。`
+
+  const memorialResponse = await client.session.prompt({
+    path: { id: shangshuSessionId },
+    body: {
+      agent: "shangshu",
+      parts: [{ type: "text" as const, text: postDispatchPrompt }],
+    },
+  })
+
+  let memorial = extractText(memorialResponse.data?.parts ?? [])
+
+  // Fallback: if shangshu returns empty, use template-based memorial
+  if (!memorial.trim()) {
+    memorial = formatMemorial(edict, plan, executions)
+  }
+
+  return { executions, memorial }
+}
+
+/** Build a description for post-execution verification */
+function buildVerificationDescription(edict: Edict, plan: Plan, executions: Execution[]): string {
+  const completedResults = executions
+    .filter((e) => e.status === "completed" && e.result)
+    .map((e) => {
+      const subtask = plan.subtasks.find((s) => s.index === e.subtaskIndex)
+      const dept = DEPT_DISPLAY[e.department] ?? e.department
+      return `### ${dept}: ${subtask?.title ?? `子任务 ${e.subtaskIndex}`}\n${e.result}`
+    })
+    .join("\n\n")
+
+  const failedResults = executions
+    .filter((e) => e.status === "failed")
+    .map((e) => {
+      const subtask = plan.subtasks.find((s) => s.index === e.subtaskIndex)
+      const dept = DEPT_DISPLAY[e.department] ?? e.department
+      return `- ${dept}: ${subtask?.title ?? `子任务 ${e.subtaskIndex}`} — 失败: ${e.error ?? "未知错误"}`
+    })
+    .join("\n")
+
+  return `对以下旨意的执行结果进行综合验证。
+
+## 旨意
+标题: ${edict.title}
+内容: ${edict.content}
+
+## 各部执行结果
+${completedResults}
+
+${failedResults ? `## 失败任务\n${failedResults}` : ""}
+
+## 验证要求
+1. 运行构建命令（build），确认代码编译通过
+2. 运行测试命令（test），确认测试通过
+3. 从用户角度验证功能是否符合旨意要求
+4. 检查各部执行结果是否完整、一致
+5. 识别可能遗漏的问题或回归风险
+
+输出完整的验证报告。`
+}
+
+/**
+ * Main pipeline: 三省六部 complete workflow.
+ *
+ * Phase 1: 中书省 Planning + 门下省 Review (retry loop)
+ * Phase 2: 尚书省 Coordination + 六部 Execution + 奏折
+ */
 export async function runPipeline(
   edict: Edict,
   context: ToolContext,
@@ -119,11 +293,14 @@ export async function runPipeline(
   let plan: Plan | undefined
   let rejectionReasons: string[] | undefined
 
-  // Phase 1: 中书省 Planning + 门下省 Review loop
+  // ========================================
+  // Phase 1: 中书省 Planning + 门下省 Review
+  // ========================================
   const maxAttempts = config.pipeline.maxReviewAttempts
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     checkAbort(context.abort)
 
+    // --- 1a: 中书省 plans ---
     store.update(edict.id, { status: "planning" })
     client.tui.showToast({ body: { message: `📜 中书省规划中...（第 ${attempt} 次）`, variant: "info" } })
 
@@ -137,14 +314,22 @@ export async function runPipeline(
       continue
     }
 
+    // --- 1b: 门下省 reviews ---
     store.update(edict.id, { plan, status: "reviewing" })
     checkAbort(context.abort)
 
     client.tui.showToast({ body: { message: "🔍 门下省审核中...", variant: "info" } })
-    const review = await reviewWithMenxia(client, edict, plan, config.pipeline.sensitivePatterns)
+    const review = await reviewWithMenxia(
+      client,
+      edict,
+      plan,
+      config.pipeline.sensitivePatterns,
+      config.pipeline.mandatoryDepartments,
+    )
     store.update(edict.id, { review })
 
     if (review.verdict === "approve") {
+      // --- Sensitive ops check ---
       if (review.sensitiveOps.length > 0) {
         store.update(edict.id, { status: "needs_approval" })
         client.tui.showToast({ body: { message: "⚠️ 检测到敏感操作，需要您确认", variant: "warning" } })
@@ -183,23 +368,26 @@ export async function runPipeline(
     throw new Error("规划阶段未生成有效方案")
   }
 
-  // Phase 2: 尚书省 Dispatch + 六部 Execution
+  // ========================================
+  // Phase 2: 尚书省 Coordination + 六部 Execution
+  // ========================================
   checkAbort(context.abort)
   store.update(edict.id, { status: "dispatched" })
-  client.tui.showToast({ body: { message: "⚔️ 六部执行中...", variant: "info" } })
+  client.tui.showToast({ body: { message: "📋 尚书省接旨调度...", variant: "info" } })
 
   store.update(edict.id, { status: "executing" })
-  const executions = await dispatchAndExecute(client, edict, plan)
-  store.update(edict.id, { executions })
+  const { executions, memorial } = await shangshuCoordinate(client, edict, plan, config)
+  store.update(edict.id, { executions, memorial, status: "completed" })
 
-  // Phase 3: Memorial
-  const memorial = formatMemorial(edict, plan, executions)
-  store.update(edict.id, { memorial, status: "completed" })
   client.tui.showToast({ body: { message: "📋 奏折已归档", variant: "success" } })
 
   return memorial
 }
 
+/**
+ * Fallback memorial formatter (used when shangshu AI generation is empty).
+ * Kept as a utility but no longer the primary memorial generator.
+ */
 export function formatMemorial(edict: Edict, plan: Plan, executions: Execution[]): string {
   const lines: string[] = []
 

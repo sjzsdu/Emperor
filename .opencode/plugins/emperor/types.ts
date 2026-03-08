@@ -78,6 +78,8 @@ export interface EmperorConfig {
   pipeline: {
     maxReviewAttempts: number
     sensitivePatterns: string[]
+    mandatoryDepartments: DepartmentId[]
+    requirePostVerification: boolean
   }
   store: {
     dataDir: string

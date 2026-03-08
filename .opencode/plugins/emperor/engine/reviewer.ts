@@ -1,6 +1,6 @@
 import type { OpencodeClient } from "@opencode-ai/sdk"
 import type { Part } from "@opencode-ai/sdk"
-import type { Edict, Plan, Review } from "../types"
+import type { DepartmentId, Edict, Plan, Review } from "../types"
 
 const regexCache = new Map<string, RegExp>()
 
@@ -64,6 +64,35 @@ function parseReview(text: string): Review {
   }
 }
 
+const DEPT_DISPLAY: Record<string, string> = {
+  bingbu: "兵部",
+  gongbu: "工部",
+  lifebu: "礼部",
+  xingbu: "刑部",
+  hubu: "户部",
+  libu: "吏部",
+}
+
+/** Check if plan includes all mandatory departments */
+export function checkMandatoryDepartments(
+  plan: Plan,
+  mandatoryDepartments: DepartmentId[],
+): string[] {
+  if (mandatoryDepartments.length === 0) return []
+
+  const planDepartments = new Set(plan.subtasks.map((s) => s.department))
+  const missing: string[] = []
+
+  for (const dept of mandatoryDepartments) {
+    if (!planDepartments.has(dept)) {
+      const displayName = DEPT_DISPLAY[dept] ?? dept
+      missing.push(`规划方案缺少必要部门「${displayName}」（${dept}）的任务——涉及代码改动时，必须包含测试验证环节`)
+    }
+  }
+
+  return missing
+}
+
 /** Scan subtask descriptions for sensitive operation patterns */
 export function detectSensitiveOps(plan: Plan, patterns: string[]): string[] {
   const detected: string[] = []
@@ -80,14 +109,33 @@ export function detectSensitiveOps(plan: Plan, patterns: string[]): string[] {
   return detected
 }
 
-/** Send the plan to 门下省 for review */
+/** Send the plan to 门下省 for review, enforcing mandatory departments */
 export async function reviewWithMenxia(
   client: OpencodeClient,
   edict: Edict,
   plan: Plan,
   sensitivePatterns: string[],
+  mandatoryDepartments: DepartmentId[] = [],
 ): Promise<Review> {
-  // Code-level sensitive ops detection first
+  // Pre-check: mandatory department enforcement (code-level, before AI review)
+  const missingDepts = checkMandatoryDepartments(plan, mandatoryDepartments)
+  if (missingDepts.length > 0) {
+    // Auto-reject without even asking menxia — this is a structural violation
+    return {
+      verdict: "reject",
+      reasons: missingDepts,
+      suggestions: missingDepts.map((reason) => {
+        const match = reason.match(/「(.+?)」（(.+?)）/)
+        if (match) {
+          return `请为「${match[1]}」（${match[2]}）分配至少一个子任务，确保实现后有验证环节`
+        }
+        return "请确保所有必要部门都有对应的子任务"
+      }),
+      sensitiveOps: [],
+    }
+  }
+
+  // Code-level sensitive ops detection
   const codeSensitiveOps = detectSensitiveOps(plan, sensitivePatterns)
 
   // Create session for menxia
@@ -106,7 +154,14 @@ export async function reviewWithMenxia(
 ## 中书省规划方案
 ${JSON.stringify(plan, null, 2)}
 
-请严格按照你的审核标准（完备性、可行性、风险、效率）进行评审，输出符合 Review 接口的 JSON。`
+## 审核要点提醒
+1. **用户体验**：方案是否考虑了最终用户的使用场景？analysis 中是否有用户场景分析？
+2. **技术选型**：analysis 中是否说明了技术选型的理由？选型是否以用户体验为导向？
+3. **测试覆盖**：方案是否包含户部（hubu）的测试验证任务？
+4. **完备性**：所有需求点是否都有对应子任务？
+5. **风险识别**：安全、兼容性、性能风险是否被充分识别？
+
+请严格按照你的审核标准进行评审，输出符合 Review 接口的 JSON。`
 
   const response = await client.session.prompt({
     path: { id: sessionId },

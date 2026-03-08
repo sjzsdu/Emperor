@@ -21,6 +21,12 @@ const DEFAULT_AGENTS: Record<string, AgentConfig> = {
     description: "Menxia - Plan review and approval",
     tools: { read: true },
   },
+  shangshu: {
+    mode: "subagent",
+    prompt: "TODO: Add system prompt in Task 3",
+    description: "Shangshu - Execution coordinator and dispatch",
+    tools: { read: true },
+  },
   bingbu: {
     mode: "subagent",
     prompt: "TODO: Add system prompt in Task 3",
@@ -66,6 +72,8 @@ const DEFAULT_CONFIG: EmperorConfig = {
       "生产环境|production|deploy",
       "权限|permission|auth.*config",
     ],
+    mandatoryDepartments: ["hubu"],
+    requirePostVerification: true,
   },
   store: {
     dataDir: ".opencode/plugins/emperor/data",
