@@ -282,11 +282,13 @@ function buildFullScanPrompt(): string {
 
   return `请对当前项目进行全面侦察，并按以下 7 个关注面分别输出结构化 Markdown 报告。
 
-## 重要格式要求
+## ⚠️ 关键格式要求（必须遵守）
 
-你的输出必须包含以下 7 个分隔符，每个分隔符后面紧跟该关注面的完整报告内容：
+你的输出 **必须** 包含以下 7 个分隔符标记，每个标记后面 **必须** 紧跟该关注面的完整报告内容：
 
 ${facetInstructions}
+
+**如果你的输出不包含上述 7 个分隔符标记，报告将无法被正确解析和保存！**
 
 ## 侦察流程
 
@@ -301,16 +303,29 @@ ${facetInstructions}
 - 包含 mermaid 图表（如适用）
 - 内容详实但避免冗余
 - 使用中文
+- **每个关注面必须独立完整**
 
-## 格式示例
+## 格式示例（严格按此格式输出）
 
 ${FACET_DELIMITER_PREFIX}architecture${FACET_DELIMITER_SUFFIX}
 # 架构总览
-...你的架构分析内容...
+
+## 目录结构
+\`\`\`
+项目根/
+  src/
+  tests/
+\`\`\`
+
+## 核心模块
+...（你的分析内容）...
 
 ${FACET_DELIMITER_PREFIX}techstack${FACET_DELIMITER_SUFFIX}
 # 技术栈
-...你的技术栈分析内容...
+
+- 语言: TypeScript
+- 框架: ...
+...（你的分析内容）...
 
 （以此类推，必须包含全部 7 个关注面）`
 }
@@ -385,8 +400,18 @@ async function runFullScan(
     client.tui.showToast({ body: { message: `❌ 锦衣卫侦察失败: ${msg}`, variant: "error" } })
     throw new Error(`锦衣卫侦察失败: ${msg}`)
   }
-
   const text = extractText(response.data?.parts ?? [])
+  
+  // Debug: save raw response for troubleshooting
+  try {
+    const debugDir = join(getReconDir(directory, config), "debug")
+    if (!existsSync(debugDir)) {
+      mkdirSync(debugDir, { recursive: true })
+    }
+    writeFileSync(join(debugDir, `jinyiwei_raw_${Date.now()}.md`), text, "utf-8")
+  } catch {
+    // Non-fatal
+  }
   
   if (!text.trim()) {
     client.tui.showToast({ body: { message: "⚠️ 锦衣卫返回空结果，请检查 jinyiwei agent 配置", variant: "warning" } })
@@ -399,8 +424,31 @@ async function runFullScan(
     }
   }
   
-  const facets = parseFacetResponse(text)
-
+  // Check if response contains delimiters
+  const delimiterCount = (text.match(/<!-- FACET:/g) || []).length
+  if (delimiterCount < 7) {
+    client.tui.showToast({ 
+      body: { 
+        message: `⚠️ 锦衣卫返回格式不符合要求（仅${delimiterCount}/7个分隔符），将尝试补充缺失关注面`, 
+        variant: "warning" 
+      } 
+    })
+  }
+  
+  let facets = parseFacetResponse(text)
+  
+  // Fallback: if parsing failed (no facets found), save raw response as full report
+  if (Object.keys(facets).length === 0 && text.trim().length > 0) {
+    client.tui.showToast({ 
+      body: { 
+        message: "⚠️ 格式解析失败，将保存为完整报告（可用 force_rebuild 重试）", 
+        variant: "warning" 
+      } 
+    })
+    // Save as a special "full" facet for debugging/fallback
+    facets = { architecture: text } as any
+    saveFacet(directory, config, "architecture", text)
+  }
   // Check for missing facets — request them individually in the same session
   const missingFacets = RECON_FACET_IDS.filter((id) => !facets[id])
   for (const missingId of missingFacets) {
