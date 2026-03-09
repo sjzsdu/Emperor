@@ -4,8 +4,9 @@ import { JsonEdictStore } from "./store"
 import { createEdictTool } from "./tools/edict"
 import { createMemorialTool } from "./tools/memorial"
 import { createHaltTool } from "./tools/halt"
-import { createTaiziReconTool, createZhongshuReconTool, createMenxiaReconTool } from "./tools/recon"
+import { createTaiziReconTool, createZhongshuReconTool, createMenxiaReconTool, createLibuReconTool, createBingbuReconTool, createHubuReconTool, createXingbuReconTool, createGongbuReconTool } from "./tools/recon"
 import { createSubmitPlanTool, createRejectPlanTool, createApprovePlanTool } from "./tools/workflow"
+import { createAssignArchitectureTool, createAssignImplementationTool, createAssignTestingTool, createAssignFixTool, createAssignDocumentationTool, createAssignSecurityAuditTool, createAssignCicdTool } from "./tools/dispatch"
 
 export const EmperorPlugin: Plugin = async ({ client, directory }) => {
   const config = loadConfig(directory)
@@ -36,6 +37,20 @@ export const EmperorPlugin: Plugin = async ({ client, directory }) => {
       "submit_plan": createSubmitPlanTool(client, store),
       "reject_plan": createRejectPlanTool(client, store),
       "approve_plan": createApprovePlanTool(client, store, config),
+      // === 锦衣卫侦察工具（六部视角） ===
+      "libu_recon": createLibuReconTool(client, store),
+      "bingbu_recon": createBingbuReconTool(client, store),
+      "hubu_recon": createHubuReconTool(client, store),
+      "xingbu_recon": createXingbuReconTool(client, store),
+      "gongbu_recon": createGongbuReconTool(client, store),
+      // === 尚书省派发工具 ===
+      "assign_architecture": createAssignArchitectureTool(client, store),
+      "assign_implementation": createAssignImplementationTool(client, store),
+      "assign_testing": createAssignTestingTool(client, store),
+      "assign_fix": createAssignFixTool(client, store),
+      "assign_documentation": createAssignDocumentationTool(client, store),
+      "assign_security_audit": createAssignSecurityAuditTool(client, store),
+      "assign_cicd": createAssignCicdTool(client, store),
     },
   }
 }

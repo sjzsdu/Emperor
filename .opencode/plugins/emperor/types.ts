@@ -30,6 +30,7 @@ export interface Edict {
   executions: Execution[]
   memorial?: string
   projectContext?: string
+  executionContext?: ExecutionContext
 }
 
 export interface Plan {
@@ -65,6 +66,24 @@ export interface Execution {
   retryCount: number
   startedAt?: number
   completedAt?: number
+}
+
+/** Tracks inter-department handoff state during 尚书省→六部 execution pipeline */
+export interface ExecutionContext {
+  /** 吏部 architecture/module design result */
+  architectureResult?: string
+  /** 兵部 implementation result */
+  implementationResult?: string
+  /** 户部 test results with pass/fail per attempt */
+  testResults?: Array<{ result: string; passed: boolean; attempt: number }>
+  /** 兵部 fix results per attempt */
+  fixResults?: Array<{ result: string; attempt: number }>
+  /** 吏部 documentation update result (post-pass) */
+  documentationResult?: string
+  /** 刑部 security audit result (post-pass) */
+  securityAuditResult?: string
+  /** 工部 CI/CD update result (post-pass) */
+  cicdResult?: string
 }
 
 export interface EdictStore {

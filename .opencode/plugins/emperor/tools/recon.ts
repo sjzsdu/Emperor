@@ -194,3 +194,225 @@ ${planBlock}
     },
   })
 }
+
+// ============================================================
+// Tool 4: 吏部侦察 — libu_recon
+// ============================================================
+
+export function createLibuReconTool(client: OpencodeClient, store: EdictStore) {
+  return tool({
+    description: "吏部侦察：命令锦衣卫扫描项目，获取架构设计和文档更新所需的项目上下文。聚焦于模块结构、架构模式、类型系统、依赖关系等架构层面信息。",
+    args: {
+      edict_id: tool.schema.string().describe("旨意 ID"),
+    },
+    async execute(args) {
+      const edict = store.get(args.edict_id)
+      if (!edict) {
+        return `未找到旨意: ${args.edict_id}`
+      }
+
+      client.tui.showToast({ body: { message: "🕵️ 锦衣卫为吏部侦察中...", variant: "info" } })
+
+      const prompt = `请以吏部（架构师）的视角对项目进行侦察，为架构设计和文档更新提供上下文。
+
+## 当前旨意
+标题: ${edict.title}
+内容: ${edict.content}
+
+## 侦察要求（吏部视角）
+
+吏部需要架构层面的信息来设计或更新系统架构。请重点关注：
+
+1. **模块结构**：各模块的职责边界、接口定义、依赖关系
+2. **架构模式**：当前使用的设计模式、分层架构、数据流
+3. **类型系统**：核心类型定义、接口约束、泛型使用
+4. **现有文档**：当前文档的分布、格式和覆盖范围
+5. **与旨意相关的模块**：需要架构调整或文档更新的具体区域
+
+请用结构化格式输出，重点突出架构层面的信息。`
+
+      const result = await invokeJinyiwei(client, prompt, `锦衣卫·吏部侦察·${edict.title}`)
+
+      client.tui.showToast({ body: { message: "🕵️ 吏部侦察完毕", variant: "success" } })
+      return result || "锦衣卫侦察未返回结果。"
+    },
+  })
+}
+
+// ============================================================
+// Tool 5: 兵部侦察 — bingbu_recon
+// ============================================================
+
+export function createBingbuReconTool(client: OpencodeClient, store: EdictStore) {
+  return tool({
+    description: "兵部侦察：命令锦衣卫扫描项目，获取编码实现所需的项目上下文。聚焦于代码风格、现有实现、接口定义、测试模式等实现层面信息。",
+    args: {
+      edict_id: tool.schema.string().describe("旨意 ID"),
+    },
+    async execute(args) {
+      const edict = store.get(args.edict_id)
+      if (!edict) {
+        return `未找到旨意: ${args.edict_id}`
+      }
+
+      client.tui.showToast({ body: { message: "🕵️ 锦衣卫为兵部侦察中...", variant: "info" } })
+
+      const prompt = `请以兵部（编码实现）的视角对项目进行侦察，为编码实现提供上下文。
+
+## 当前旨意
+标题: ${edict.title}
+内容: ${edict.content}
+
+## 侦察要求（兵部视角）
+
+兵部需要实现层面的信息来编写代码。请重点关注：
+
+1. **代码风格**：命名规范、缩进、导入顺序、注释风格
+2. **现有实现**：与旨意相关的现有代码、函数、类
+3. **接口定义**：相关的 API、类型定义、数据结构
+4. **测试模式**：现有测试的编写方式、框架、模式
+5. **错误处理**：项目的错误处理模式、自定义错误类
+6. **可复用组件**：可以直接复用的现有工具函数、组件
+
+请用结构化格式输出，重点突出实现层面的实用信息。`
+
+      const result = await invokeJinyiwei(client, prompt, `锦衣卫·兵部侦察·${edict.title}`)
+
+      client.tui.showToast({ body: { message: "🕵️ 兵部侦察完毕", variant: "success" } })
+      return result || "锦衣卫侦察未返回结果。"
+    },
+  })
+}
+
+// ============================================================
+// Tool 6: 户部侦察 — hubu_recon
+// ============================================================
+
+export function createHubuReconTool(client: OpencodeClient, store: EdictStore) {
+  return tool({
+    description: "户部侦察：命令锦衣卫扫描项目，获取测试验证所需的项目上下文。聚焦于测试框架、测试命令、构建配置、现有测试覆盖等测试层面信息。",
+    args: {
+      edict_id: tool.schema.string().describe("旨意 ID"),
+    },
+    async execute(args) {
+      const edict = store.get(args.edict_id)
+      if (!edict) {
+        return `未找到旨意: ${args.edict_id}`
+      }
+
+      client.tui.showToast({ body: { message: "🕵️ 锦衣卫为户部侦察中...", variant: "info" } })
+
+      const prompt = `请以户部（测试官）的视角对项目进行侦察，为测试验证提供上下文。
+
+## 当前旨意
+标题: ${edict.title}
+内容: ${edict.content}
+
+## 侦察要求（户部视角）
+
+户部需要测试相关的信息来编写和执行测试。请重点关注：
+
+1. **测试框架**：使用的测试框架（Jest/Vitest/Mocha 等）、配置文件位置
+2. **测试命令**：如何运行测试（npm test / bun test 等）、如何运行构建
+3. **现有测试**：测试目录结构、测试命名规范、mock 模式
+4. **构建配置**：构建工具、构建命令、构建输出
+5. **CI 集成**： CI 中的测试步骤和要求
+
+请用结构化格式输出，重点突出测试执行所需的实用信息。`
+
+      const result = await invokeJinyiwei(client, prompt, `锦衣卫·户部侦察·${edict.title}`)
+
+      client.tui.showToast({ body: { message: "🕵️ 户部侦察完毕", variant: "success" } })
+      return result || "锦衣卫侦察未返回结果。"
+    },
+  })
+}
+
+// ============================================================
+// Tool 7: 刑部侦察 — xingbu_recon
+// ============================================================
+
+export function createXingbuReconTool(client: OpencodeClient, store: EdictStore) {
+  return tool({
+    description: "刑部侦察：命令锦衣卫扫描项目，获取安全审计所需的项目上下文。聚焦于安全配置、敏感数据处理、依赖安全性、权限控制等安全层面信息。",
+    args: {
+      edict_id: tool.schema.string().describe("旨意 ID"),
+    },
+    async execute(args) {
+      const edict = store.get(args.edict_id)
+      if (!edict) {
+        return `未找到旨意: ${args.edict_id}`
+      }
+
+      client.tui.showToast({ body: { message: "🕵️ 锦衣卫为刑部侦察中...", variant: "info" } })
+
+      const prompt = `请以刑部（安全审计官）的视角对项目进行侦察，为安全合规审查提供上下文。
+
+## 当前旨意
+标题: ${edict.title}
+内容: ${edict.content}
+
+## 侦察要求（刑部视角）
+
+刑部需要安全层面的信息来进行安全审计。请重点关注：
+
+1. **安全配置**：认证、授权、加密配置、CORS 策略
+2. **敏感数据处理**：密码、密钥、个人信息的处理方式
+3. **依赖安全性**：依赖包版本、已知漏洞
+4. **权限控制**：访问控制模式、权限检查机制
+5. **输入验证**：用户输入的验证和消毒模式
+6. **日志审计**：日志记录、审计跟踪机制
+
+请用结构化格式输出，重点突出安全审计关注点。`
+
+      const result = await invokeJinyiwei(client, prompt, `锦衣卫·刑部侦察·${edict.title}`)
+
+      client.tui.showToast({ body: { message: "🕵️ 刑部侦察完毕", variant: "success" } })
+      return result || "锦衣卫侦察未返回结果。"
+    },
+  })
+}
+
+// ============================================================
+// Tool 8: 工部侦察 — gongbu_recon
+// ============================================================
+
+export function createGongbuReconTool(client: OpencodeClient, store: EdictStore) {
+  return tool({
+    description: "工部侦察：命令锦衣卫扫描项目，获取CI/CD和基础设施更新所需的项目上下文。聚焦于构建配置、CI/CD流水线、部署配置、环境变量等基建层面信息。",
+    args: {
+      edict_id: tool.schema.string().describe("旨意 ID"),
+    },
+    async execute(args) {
+      const edict = store.get(args.edict_id)
+      if (!edict) {
+        return `未找到旨意: ${args.edict_id}`
+      }
+
+      client.tui.showToast({ body: { message: "🕵️ 锦衣卫为工部侦察中...", variant: "info" } })
+
+      const prompt = `请以工部（基础设施工程师）的视角对项目进行侦察，为CI/CD和基建更新提供上下文。
+
+## 当前旨意
+标题: ${edict.title}
+内容: ${edict.content}
+
+## 侦察要求（工部视角）
+
+工部需要基建层面的信息来评估和更新CI/CD配置。请重点关注：
+
+1. **构建配置**：构建工具（Webpack/Vite/esbuild/tsc）、构建脚本、构建输出
+2. **CI/CD 流水线**：GitHub Actions/GitLab CI 配置、步骤、触发条件
+3. **部署配置**：Docker/Kubernetes 配置、部署脚本、环境变量
+4. **包管理**：包管理器、依赖版本策略、lock 文件
+5. **环境配置**：开发/测试/生产环境配置差异
+
+请用结构化格式输出，重点突出基建层面的实用信息。`
+
+      const result = await invokeJinyiwei(client, prompt, `锦衣卫·工部侦察·${edict.title}`)
+
+      client.tui.showToast({ body: { message: "🕵️ 工部侦察完毕", variant: "success" } })
+      return result || "锦衣卫侦察未返回结果。"
+    },
+  })
+}
