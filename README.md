@@ -1,92 +1,92 @@
-# Emperor — 三省六部多智能体协作系统
+# Emperor — Three Departments and Six Ministries Multi-Agent Collaboration System
 
-一个 [OpenCode](https://opencode.ai) 插件，将中国古代三省六部制的治理智慧映射为多智能体协作架构，用于编排复杂的编程任务。
+An [OpenCode](https://opencode.ai) plugin that maps the governance wisdom of ancient China's Three Departments and Six Ministries system into a multi-agent collaboration architecture for orchestrating complex programming tasks.
 
-## 架构概览
+## Architecture Overview
 
 ```mermaid
 graph TD
-    User["用户下旨"] --> Taizi["太子<br/>统筹分诊"]
-    Taizi --> Jinyiwei["锦衣卫<br/>项目侦察"]
-    Jinyiwei --> Zhongshu["中书省<br/>拟定方案"]
-    Zhongshu --> Menxia["门下省<br/>审核封驳"]
-    Menxia -->|驳回| Zhongshu
-    Menxia -->|通过| Shangshu["尚书省<br/>执行总调度"]
-    Shangshu --> Libu["吏部<br/>架构重构"]
-    Shangshu --> Hubu["户部<br/>测试验证"]
-    Shangshu --> Libu2["礼部<br/>API文档"]
-    Shangshu --> Bingbu["兵部<br/>安全测试"]
-    Shangshu --> Xingbu["刑部<br/>安全审计"]
-    Shangshu --> Gongbu["工部<br/>基础设施"]
-    Libu --> Memorial["尚书省<br/>汇总奏折"]
+    User["User's Edict"] --> Taizi["Crown Prince<br/>Task Triage"]
+    Taizi --> Jinyiwei["Jinyiwei<br/>Project Reconnaissance"]
+    Jinyiwei --> Zhongshu["Zhongshu Province<br/>Planning"]
+    Zhongshu --> Menxia["Menxia Province<br/>Review & Veto"]
+    Menxia -->|Reject| Zhongshu
+    Menxia -->|Approve| Shangshu["Shangshu Province<br/>Execution Dispatch"]
+    Shangshu --> Libu["Libu<br/>Architecture Refactoring"]
+    Shangshu --> Hubu["Hubu<br/>Testing & Verification"]
+    Shangshu --> Libu2["Libu2<br/>API Documentation"]
+    Shangshu --> Bingbu["Bingbu<br/>Security Testing"]
+    Shangshu --> Xingbu["Xingbu<br/>Security Audit"]
+    Shangshu --> Gongbu["Gongbu<br/>Infrastructure"]
+    Libu --> Memorial["Shangshu Province<br/>Memorial Summary"]
     Hubu --> Memorial
     Libu2 --> Memorial
     Bingbu --> Memorial
     Xingbu --> Memorial
     Gongbu --> Memorial
     Memorial --> Taizi
-    Jinyiwei -.->|项目上下文| Zhongshu
-    Jinyiwei -.->|摘要| Menxia
+    Jinyiwei -.->|Project Context| Zhongshu
+    Jinyiwei -.->|Summary| Menxia
 ```
 
-**完整流程**：用户下旨 → 太子分诊 → 锦衣卫侦察 → 中书省规划 → 门下省审核 → 尚书省调度 → 六部并行执行 → 尚书省汇总奏折 → 太子验收
+**Full Flow**: User's Edict → Crown Prince Triage → Jinyiwei Reconnaissance → Zhongshu Planning → Menxia Review → Shangshu Dispatch → Six Ministries Parallel Execution → Shangshu Summary → Crown Prince Acceptance
 
-**核心规则**：太子只与三省（中书省、门下省、尚书省）沟通，绝不直接找六部派活。
+**Core Rule**: The Crown Prince only communicates with the Three Provinces (Zhongshu, Menxia, Shangshu), never directly assigning tasks to the Six Ministries.
 
-## 十一部 Agent
+## Eleven Agents
 
-| Agent | 角色 | 职责 |
-|-------|------|------|
-| **太子** (taizi) | 分诊官 | 接收用户请求，分析任务性质，只与三省沟通 |
-| **锦衣卫** (jinyiwei) | 侦察官 | 扫描项目代码，生成架构图和上下文报告，为规划提供情报 |
-| **中书省** (zhongshu) | 规划师 | 将任务拆解为子任务，分配给对应六部，输出结构化 JSON 方案 |
-| **门下省** (menxia) | 审查官 | 审核中书省方案的合理性、风险和依赖关系，可封驳退回 |
-| **尚书省** (shangshu) | 执行总调度 | 接收审核通过的方案，调度六部并行执行，监控进度，汇总奏折 |
-| **吏部** (libu) | 架构师 | 负责代码架构、重构、类型系统、模块设计 |
-| **户部** (hubu) | 测试官 | 负责测试与验证，确保代码能正常工作（强制参与） |
-| **礼部** (libu2) | 接口官 | 负责 API 设计、协议对接、文档编写 |
-| **兵部** (bingbu) | 安全官 | 负责安全测试、性能优化、错误处理 |
-| **刑部** (xingbu) | 审计官 | 负责安全审计、合规检查、漏洞扫描（只读，不修改代码） |
-| **工部** (gongbu) | 工程师 | 负责构建工具、CI/CD、部署、环境配置 |
+| Agent | Role | Responsibility |
+|-------|------|----------------|
+| **Crown Prince** (taizi) | Triage | Receives user requests, analyzes task nature, only communicates with Three Provinces |
+| **Jinyiwei** (jinyiwei) | Reconnaissance | Scans project code, generates architecture maps and context reports for planning intelligence |
+| **Zhongshu Province** (zhongshu) | Planner | Breaks down tasks into subtasks, assigns to appropriate Six Ministries, outputs structured JSON plans |
+| **Menxia Province** (menxia) | Reviewer | Reviews plan rationality, risks, and dependencies; can veto and send back |
+| **Shangshu Province** (shangshu) | Execution Dispatch | Receives approved plans, dispatches Six Ministries for parallel execution, monitors progress, summarizes memorials |
+| **Libu** (libu) | Architect | Code architecture, refactoring, type system, module design |
+| **Hubu** (hubu) | Tester | Testing and verification, ensuring code works (mandatory participation) |
+| **Libu2** (libu2) | API Officer | API design, protocol integration, documentation |
+| **Bingbu** (bingbu) | Security Officer | Security testing, performance optimization, error handling |
+| **Xingbu** (xingbu) | Auditor | Security audit, compliance checks, vulnerability scanning (read-only, no code modification) |
+| **Gongbu** (gongbu) | Engineer | Build tools, CI/CD, deployment, environment configuration |
 
-## 自定义工具
+## Custom Tools
 
-### 下旨 (`emperor_create_edict`)
+### Create Edict (`emperor_create_edict`)
 
-创建圣旨并启动完整流转流程。
-
-```
-输入参数:
-  - title: 圣旨标题
-  - content: 具体需求描述
-  - priority: 优先级 (low / medium / high / critical)
-```
-
-### 查看奏折 (`emperor_view_memorial`)
-
-查询历史圣旨和执行结果。
+Creates an edict and starts the complete workflow.
 
 ```
-输入参数:
-  - edict_id: (可选) 查看特定圣旨的奏折
-  - status: (可选) 按状态筛选 (planning / reviewing / executing / completed / failed / halted)
+Input Parameters:
+  - title: Edict title
+  - content: Specific requirement description
+  - priority: Priority (low / medium / high / critical)
 ```
 
-### 叫停 (`emperor_halt_edict`)
+### View Memorial (`emperor_view_memorial`)
 
-紧急叫停正在执行的圣旨。
+Queries historical edicts and execution results.
 
 ```
-输入参数:
-  - edict_id: 要叫停的圣旨 ID
-  - reason: 叫停原因
+Input Parameters:
+  - edict_id: (Optional) View specific edict's memorial
+  - status: (Optional) Filter by status (planning / reviewing / executing / completed / failed / halted)
 ```
 
-## 安装配置
+### Halt Edict (`emperor_halt_edict`)
 
-### 1. 插件注册
+Emergency halt of executing edict.
 
-在 `.opencode/opencode.json` 中添加插件路径：
+```
+Input Parameters:
+  - edict_id: Edict ID to halt
+  - reason: Reason for halt
+```
+
+## Installation & Configuration
+
+### 1. Plugin Registration
+
+Add plugin path in `.opencode/opencode.json`:
 
 ```json
 {
@@ -97,9 +97,9 @@ graph TD
 }
 ```
 
-### 2. Emperor 配置
+### 2. Emperor Configuration
 
-插件使用独立的 `.opencode/emperor.json` 配置文件（不与 `opencode.json` 混合）：
+The plugin uses a separate `.opencode/emperor.json` configuration file (not mixed with `opencode.json`):
 
 ```json
 {
@@ -123,6 +123,7 @@ graph TD
     "mandatoryDepartments": ["hubu"],
     "requirePostVerification": true,
     "maxSubtaskRetries": 1
+  },
   "recon": {
     "enabled": true,
     "cacheDir": "recon"
@@ -133,151 +134,151 @@ graph TD
 }
 ```
 
-#### 配置项说明
+#### Configuration Options
 
-- **agents**: 每个 Agent 的模型配置，可按需指定不同模型
-- **pipeline.maxPlanningRetries**: 中书省规划被门下省驳回后的最大重试次数
-- **pipeline.reviewMode**: 审核模式
-  - `auto` — 自动审核，敏感操作仍需人工确认
-  - `manual` — 所有操作都需人工确认
-  - `mixed` — 默认自动，检测到敏感操作时转为人工（推荐）
-- **pipeline.sensitivePatterns**: 触发人工审核的关键词列表
-- **pipeline.mandatoryDepartments**: 强制参与的部门列表（默认 `["hubu"]`），中书省方案中必须包含这些部门，否则门下省将自动驳回
-- **pipeline.requirePostVerification**: 是否在六部执行完成后进行户部后置验证（默认 `true`）
-- **store.dataDir**: 圣旨数据持久化目录
-- **recon.enabled**: 是否启用锦衣卫侦察（默认 `true`）。禁用后跳过 Phase 0，不注入项目上下文
-- **recon.cacheDir**: 侦察报告缓存目录（相对于 store.dataDir），按 git hash 缓存，同一提交不重复扫描
-- **pipeline.maxSubtaskRetries**: 子任务执行失败后的自动重试次数（默认 `1`）。重试时复用同一 session，并告知 agent 上次失败原因
+- **agents**: Model configuration for each Agent, can specify different models as needed
+- **pipeline.maxPlanningRetries**: Maximum retry attempts when Zhongshu plan is rejected by Menxia
+- **pipeline.reviewMode**: Review mode
+  - `auto` — Auto review, sensitive operations still require manual confirmation
+  - `manual` — All operations require manual confirmation
+  - `mixed` — Default auto, switches to manual when sensitive operations detected (recommended)
+- **pipeline.sensitivePatterns**: Keywords that trigger manual review
+- **pipeline.mandatoryDepartments**: Departments that must participate (default `["hubu"]`), Menxia will automatically reject plans missing these departments
+- **pipeline.requirePostVerification**: Whether to perform Hubu post-verification after Six Ministries execution (default `true`)
+- **store.dataDir**: Edict data persistence directory
+- **recon.enabled**: Whether to enable Jinyiwei reconnaissance (default `true`). When disabled, skips Phase 0, doesn't inject project context
+- **recon.cacheDir**: Reconnaissance report cache directory (relative to store.dataDir), cached by git hash, no repeated scans for same commit
+- **pipeline.maxSubtaskRetries**: Auto retry count after subtask failure (default `1`). Retries reuse same session and inform agent of previous failure reason
 
-## 使用方式
+## Usage
 
-### 方式一：通过太子 Agent
+### Method 1: Via Crown Prince Agent
 
-在 OpenCode 中切换到 `taizi` Agent，直接描述你的需求：
-
-```
-@taizi 我需要给项目添加用户认证系统，包括 JWT token、刷新机制、以及角色权限控制
-```
-
-太子会自动分诊并触发完整的三省六部流转。
-
-### 方式二：通过下旨工具
-
-任何 Agent 都可以调用下旨工具：
+In OpenCode, switch to `taizi` Agent and describe your requirement:
 
 ```
-使用 emperor_create_edict 工具:
-  title: "用户认证系统"
-  content: "实现 JWT 认证、token 刷新、RBAC 权限控制"
+@taizi I need to add a user authentication system to the project, including JWT tokens, refresh mechanism, and role-based access control
+```
+
+The Crown Prince will automatically triage and trigger the complete Three Provinces Six Ministries workflow.
+
+### Method 2: Via Edict Tool
+
+Any Agent can call the edict tool:
+
+```
+Use emperor_create_edict tool:
+  title: "User Authentication System"
+  content: "Implement JWT authentication, token refresh, RBAC permission control"
   priority: "high"
 ```
 
-### 查看执行结果
+### View Execution Results
 
 ```
-使用 emperor_view_memorial 工具:
+Use emperor_view_memorial tool:
   edict_id: "edict_1709712000000_a1b2"
 ```
 
-## 流转机制
+## Workflow Mechanism
 
-### 敏感操作检测
+### Sensitive Operation Detection
 
-门下省会自动扫描子任务描述，匹配敏感关键词（如"删除"、"production"、"密钥"等）。匹配到时：
+Menxia Province automatically scans subtask descriptions, matching sensitive keywords (like "delete", "production", "credentials", etc.). When matched:
 
-1. 标记为敏感操作
-2. 弹出确认对话框，需用户手动批准
-3. 用户可选择批准或驳回
+1. Mark as sensitive operation
+2. Pop up confirmation dialog, requires manual approval
+3. User can approve or reject
 
-### 锦衣卫侦察（Phase 0）
+### Jinyiwei Reconnaissance (Phase 0)
 
-每次下旨执行前，锦衣卫会先扫描项目代码，生成包含 mermaid 图表的结构化报告：
+Before each edict execution, Jinyiwei scans the project code first, generating a structured report with mermaid charts:
 
-1. **技术栈识别**：语言、框架、构建工具、包管理器
-2. **目录结构分析**：模块划分、入口文件、配置位置
-3. **架构模式识别**：设计模式、分层架构、数据流
-4. **依赖关系图**：mermaid 模块依赖图
-5. **功能地图**：与旨意相关的功能模块详细分析
+1. **Tech Stack Identification**: Language, framework, build tool, package manager
+2. **Directory Structure Analysis**: Module division, entry files, configuration locations
+3. **Architecture Pattern Recognition**: Design patterns, layered architecture, data flow
+4. **Dependency Graph**: Mermaid module dependency graph
+5. **Feature Map**: Detailed analysis of feature modules related to the edict
 
-**分层注入**（控制 token 成本）：
-- 完整报告 → 中书省（规划需要全貌了解）
-- 摘要报告 → 门下省（审核只需关键信息）
-- 不注入 → 尚书省、六部（避免 token 浪费）
+**Tiered Injection** (control token costs):
+- Full report → Zhongshu Province (planning needs full picture)
+- Summary report → Menxia Province (review only needs key info)
+- No injection → Shangshu Province, Six Ministries (avoid token waste)
 
-**智能缓存**：结果按 git hash 缓存，同一提交不重复扫描，大幅降低成本。
+**Smart Caching**: Results cached by git hash, no repeated scans for same commit, significantly reducing costs.
 
-### 强制部门参与
+### Mandatory Department Participation
 
-通过 `mandatoryDepartments` 配置，可强制要求特定部门参与每次任务执行。默认要求户部（测试验证）参与，确保所有方案都经过测试。该检查在门下省审核阶段和代码层面同时执行，缺少必要部门的方案将被自动驳回。
+Through `mandatoryDepartments` configuration, specific departments can be required to participate in every task execution. By default, Hubu (testing verification) is required to participate, ensuring all plans are tested. This check is enforced at both the Menxia review stage and code level; plans missing required departments are automatically rejected.
 
-### 依赖调度
+### Dependency Dispatch
 
-六部子任务支持依赖声明。调度引擎使用拓扑排序（Kahn 算法）将子任务分组为执行波次：
+Six Ministries subtasks support dependency declaration. The dispatch engine uses topological sorting (Kahn's algorithm) to group subtasks into execution waves:
 
-- **Wave 1**: 无依赖的子任务并行执行
-- **Wave 2**: 依赖 Wave 1 结果的子任务并行执行
-- **依此类推...**
+- **Wave 1**: Independent subtasks execute in parallel
+- **Wave 2**: Subtasks depending on Wave 1 results execute in parallel
+- **And so on...**
 
-### 尚书省调度
+### Shangshu Province Dispatch
 
-尚书省作为执行总调度，在门下省审核通过后接管流程：
+As the execution dispatch, Shangshu Province takes over the workflow after Menxia Province approval:
 
-1. **预调度**：审查执行策略，确认资源分配
-2. **代码调度**：基于拓扑排序并行调度六部执行，每个 Wave 实时 Toast 进度通知
-3. **失败自动重试**：子任务失败后自动重试（复用同一 session，告知失败原因）
-4. **失败分析**：重试仍失败时，尚书省分析失败原因（代码问题/测试问题/环境问题）并给出修复建议
-5. **后置验证**：可选的户部后置验证环节
-6. **汇总奏折**：AI 生成结构化奏折，包含重试统计和失败分析
+1. **Pre-dispatch**: Review execution strategy, confirm resource allocation
+2. **Code dispatch**: Topological sort based parallel dispatch of Six Ministries, real-time Toast progress notifications for each Wave
+3. **Automatic retry on failure**: Subtask failures automatically retry (reuse same session, inform of failure reason)
+4. **Failure analysis**: On continued failure after retry, Shangshu analyzes failure reason (code issue/test issue/environment issue) and provides fix suggestions
+5. **Post-verification**: Optional Hubu post-verification stage
+6. **Memorial summary**: AI generates structured memorial with retry statistics and failure analysis
 
-### 奏折格式
+### Memorial Format
 
-执行完成后，尚书省生成结构化奏折（Memorial），包含：
+After execution completes, Shangshu Province generates a structured Memorial containing:
 
-- 各部执行结果和状态（含重试次数）
-- 成功/失败统计
-- 风险提示和门下省审核意见
+- Each ministry's execution results and status (including retry counts)
+- Success/failure statistics
+- Risk warnings and Menxia Province review comments
 
-## 项目结构
+## Project Structure
 
 ```
 .opencode/
-├── emperor.json                         # 插件配置
-├── opencode.json                        # OpenCode 配置（注册插件）
+├── emperor.json                         # Plugin configuration
+├── opencode.json                        # OpenCode configuration (plugin registration)
 └── plugins/emperor/
-    ├── index.ts                         # 插件入口
-    ├── types.ts                         # 类型定义
-    ├── config.ts                        # 配置加载器
-    ├── store.ts                         # 圣旨数据持久化
+    ├── index.ts                         # Plugin entry
+    ├── types.ts                         # Type definitions
+    ├── config.ts                        # Configuration loader
+    ├── store.ts                         # Edict data persistence
     ├── agents/
-    │   └── prompts.ts                   # 十一部 Agent 系统提示词
-    ├── skills/                          # 插件内置 Skills
-    │   ├── taizi-reloaded/              # 太子增强版（判断-执行分离）
-    │   ├── quick-verify/                # 快速验证技能
-    │   ├── hubu-tester/                 # 户部测试官
-    │   └── menxia-reviewer/             # 门下省审核官
+    │   └── prompts.ts                   # Eleven Agents system prompts
+    ├── skills/                          # Plugin built-in Skills
+    │   ├── taizi-reloaded/              # Crown Prince enhanced (judgment-execution separation)
+    │   ├── quick-verify/                # Quick verification skill
+    │   ├── hubu-tester/                 # Hubu Tester
+    │   └── menxia-reviewer/             # Menxia Reviewer
     ├── engine/
-    │   ├── pipeline.ts                  # 流转引擎主流程（含锦衣卫侦察 + 尚书省调度）
-    │   ├── recon.ts                     # 锦衣卫侦察引擎（git-hash 缓存 + 分层注入）
-    │   ├── reviewer.ts                  # 门下省审核 + 强制部门检查 + 敏感操作检测
-    │   └── dispatcher.ts               # 六部调度（拓扑排序 + 并行执行）
+    │   ├── pipeline.ts                  # Workflow engine main flow (includes Jinyiwei Recon + Shangshu Dispatch)
+    │   ├── recon.ts                     # Jinyiwei reconnaissance engine (git-hash cache + tiered injection)
+    │   ├── reviewer.ts                  # Menxia review + mandatory department check + sensitive operation detection
+    │   └── dispatcher.ts               # Six Ministries dispatch (topological sort + parallel execution)
     └── tools/
-        ├── edict.ts                     # 下旨工具
-        ├── memorial.ts                  # 查看奏折工具
-        └── halt.ts                      # 叫停工具
+        ├── edict.ts                     # Create edict tool
+        ├── memorial.ts                  # View memorial tool
+        └── halt.ts                      # Halt tool
 ```
 
-## 内置 Skills
+## Built-in Skills
 
-插件自带以下增强版 Skills，安装插件后自动启用：
+The plugin comes with the following enhanced Skills, automatically enabled after plugin installation:
 
-| Skill | 说明 |
-|-------|------|
-| `taizi-reloaded` | 太子增强版，强调判断-执行分离和验证优先 |
-| `quick-verify` | 快速验证技能，强制交付前验证 |
-| `hubu-tester` | 户部测试官，完善的验证报告模板 |
-| `menxia-reviewer` | 门下省审核官，增加代码安全审查 |
+| Skill | Description |
+|-------|--------------|
+| `taizi-reloaded` | Crown Prince enhanced, emphasizes judgment-execution separation and verification first |
+| `quick-verify` | Quick verification skill, forces pre-delivery verification |
+| `hubu-tester` | Hubu Tester, complete verification report template |
+| `menxia-reviewer` | Menxia Reviewer, adds code security review |
 
-### 使用方式
+### Usage
 
 ```
 @skill taizi-reloaded
@@ -286,9 +287,13 @@ graph TD
 @skill menxia-reviewer
 ```
 
-## 技术栈
+## Tech Stack
 
-- **运行时**: Bun
-- **语言**: TypeScript (strict mode)
-- **插件 SDK**: @opencode-ai/plugin
-- **数据持久化**: JSON 文件存储
+- **Runtime**: Bun
+- **Language**: TypeScript (strict mode)
+- **Plugin SDK**: @opencode-ai/plugin
+- **Data Persistence**: JSON file storage
+
+---
+
+[中文版](./README.zh-CN.md) | [English](./README.md)
