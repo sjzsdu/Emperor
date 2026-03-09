@@ -15,25 +15,30 @@ export function createTaiziReconTool(client: OpencodeClient, store: EdictStore, 
       force_rebuild: tool.schema.boolean().optional().describe("是否强制全量重建侦察报告（默认 false）"),
     },
     async execute(args) {
-      if (args.force_rebuild) {
-        await forceFullScan(client, config, directory)
-      }
-
-      const { context, gitHash } = await getReconForRole(client, config, directory, "taizi")
-
-      if (!context) {
-        return "锦衣卫侦察报告为空。请确认项目目录正确且 recon 已启用。"
-      }
-
-      let edictBlock = ""
-      if (args.edict_id) {
-        const edict = store.get(args.edict_id)
-        if (edict) {
-          edictBlock = `\n\n---\n\n## 当前旨意\n标题: ${edict.title}\n内容: ${edict.content}\n优先级: ${edict.priority}`
+      try {
+        if (args.force_rebuild) {
+          await forceFullScan(client, config, directory)
         }
-      }
 
-      return `${context}${edictBlock}\n\n---\nGit: ${gitHash}`
+        const { context, gitHash, cached } = await getReconForRole(client, config, directory, "taizi")
+
+        if (!context) {
+          return "锦衣卫侦察报告为空。\n\n可能原因：\n1. 项目目录不正确\n2. recon 功能未启用（检查 emperor.json 中 recon.enabled）\n3. jinyiwei agent 未正确配置\n\n可尝试：使用 force_rebuild: true 参数强制重建"
+        }
+
+        let edictBlock = ""
+        if (args.edict_id) {
+          const edict = store.get(args.edict_id)
+          if (edict) {
+            edictBlock = `\n\n---\n\n## 当前旨意\n标题: ${edict.title}\n内容: ${edict.content}\n优先级: ${edict.priority}`
+          }
+        }
+
+        return `${context}${edictBlock}\n\n---\nGit: ${gitHash} | Cached: ${cached}`
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        return `执行出错: ${msg}\n\n请检查：\n1. jinyiwei agent 是否已注册\n2. 项目是否是有效的 git 仓库`
+      }
     },
   })
 }

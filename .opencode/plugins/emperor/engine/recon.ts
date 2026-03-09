@@ -359,39 +359,69 @@ async function runFullScan(
 ): Promise<ReconManifest> {
   client.tui.showToast({ body: { message: "🕵️ 锦衣卫全面侦察中（全量扫描）...", variant: "info" } })
 
-  const session = await client.session.create({
-    body: { title: "锦衣卫·全量侦察" },
-  })
-  const sessionId = session.data!.id
+  let sessionId: string
+  try {
+    const session = await client.session.create({
+      body: { title: "锦衣卫·全量侦察" },
+    })
+    sessionId = session.data!.id
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    client.tui.showToast({ body: { message: `❌ 创建锦衣卫会话失败: ${msg}`, variant: "error" } })
+    throw new Error(`创建锦衣卫会话失败: ${msg}`)
+  }
 
-  const response = await client.session.prompt({
-    path: { id: sessionId },
-    body: {
-      agent: "jinyiwei",
-      parts: [{ type: "text" as const, text: buildFullScanPrompt() }],
-    },
-  })
+  let response: any
+  try {
+    response = await client.session.prompt({
+      path: { id: sessionId },
+      body: {
+        agent: "jinyiwei",
+        parts: [{ type: "text" as const, text: buildFullScanPrompt() }],
+      },
+    })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    client.tui.showToast({ body: { message: `❌ 锦衣卫侦察失败: ${msg}`, variant: "error" } })
+    throw new Error(`锦衣卫侦察失败: ${msg}`)
+  }
 
   const text = extractText(response.data?.parts ?? [])
+  
+  if (!text.trim()) {
+    client.tui.showToast({ body: { message: "⚠️ 锦衣卫返回空结果，请检查 jinyiwei agent 配置", variant: "warning" } })
+    // Return empty manifest so tool can handle the error
+    return {
+      gitHash,
+      lastFullScanAt: Date.now(),
+      incrementalCount: 0,
+      facets: {},
+    }
+  }
+  
   const facets = parseFacetResponse(text)
 
   // Check for missing facets — request them individually in the same session
   const missingFacets = RECON_FACET_IDS.filter((id) => !facets[id])
   for (const missingId of missingFacets) {
     const meta = FACET_META[missingId]
-    const followUp = await client.session.prompt({
-      path: { id: sessionId },
-      body: {
-        agent: "jinyiwei",
-        parts: [{
-          type: "text" as const,
-          text: `你的上一次输出中缺少了「${meta.title}」关注面。请补充输出这个关注面的完整报告。\n\n关注面: ${meta.title}\n内容范围: ${meta.description}\n\n请直接输出报告内容（Markdown格式），不需要分隔符。`,
-        }],
-      },
-    })
-    const missingContent = extractText(followUp.data?.parts ?? [])
-    if (missingContent.trim()) {
-      facets[missingId] = missingContent.trim()
+    try {
+      const followUp = await client.session.prompt({
+        path: { id: sessionId },
+        body: {
+          agent: "jinyiwei",
+          parts: [{
+            type: "text" as const,
+            text: `你的上一次输出中缺少了「${meta.title}」关注面。请补充输出这个关注面的完整报告。\n\n关注面: ${meta.title}\n内容范围: ${meta.description}\n\n请直接输出报告内容（Markdown格式），不需要分隔符。`,
+          }],
+        },
+      })
+      const missingContent = extractText(followUp.data?.parts ?? [])
+      if (missingContent.trim()) {
+        facets[missingId] = missingContent.trim()
+      }
+    } catch {
+      // Continue with other facets even if one fails
     }
   }
 
