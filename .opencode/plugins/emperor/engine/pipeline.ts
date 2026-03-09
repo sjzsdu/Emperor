@@ -138,7 +138,7 @@ function checkAbort(abort: AbortSignal): void {
  * The actual dispatch uses code-based topological sort + parallel execution for efficiency.
  * Shangshu provides the AI intelligence layer on top.
  */
-async function shangshuCoordinate(
+export async function shangshuCoordinate(
   client: OpencodeClient,
   edict: Edict,
   plan: Plan,

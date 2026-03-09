@@ -4,6 +4,8 @@ import { JsonEdictStore } from "./store"
 import { createEdictTool } from "./tools/edict"
 import { createMemorialTool } from "./tools/memorial"
 import { createHaltTool } from "./tools/halt"
+import { createTaiziReconTool, createZhongshuReconTool, createMenxiaReconTool } from "./tools/recon"
+import { createSubmitPlanTool, createRejectPlanTool, createApprovePlanTool } from "./tools/workflow"
 
 export const EmperorPlugin: Plugin = async ({ client, directory }) => {
   const config = loadConfig(directory)
@@ -22,9 +24,18 @@ export const EmperorPlugin: Plugin = async ({ client, directory }) => {
       }
     },
     tool: {
+      // === 原有工具 ===
       "edict": createEdictTool(client, store, config, directory),
       "memorial": createMemorialTool(store),
       "halt": createHaltTool(client, store),
+      // === 锦衣卫侦察工具（各省视角） ===
+      "taizi_recon": createTaiziReconTool(client, store),
+      "zhongshu_recon": createZhongshuReconTool(client, store),
+      "menxia_recon": createMenxiaReconTool(client, store),
+      // === 三省流转工具 ===
+      "submit_plan": createSubmitPlanTool(client, store),
+      "reject_plan": createRejectPlanTool(client, store),
+      "approve_plan": createApprovePlanTool(client, store, config),
     },
   }
 }
