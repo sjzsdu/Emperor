@@ -74,6 +74,14 @@ export async function executeSubtask(
   })
   execution.sessionId = session.data!.id
 
+  // Toast: department started
+  client.tui.showToast({
+    body: {
+      message: `⚔️ ${deptName} 开始执行: ${subtask.title}`,
+      variant: "info",
+    },
+  })
+
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       let prompt: string
@@ -119,6 +127,15 @@ ${subtask.description}
       execution.status = "completed"
       execution.completedAt = Date.now()
       execution.retryCount = attempt
+
+      // Toast: department completed
+      client.tui.showToast({
+        body: {
+          message: `✅ ${deptName} 完成: ${subtask.title}`,
+          variant: "success",
+        },
+      })
+
       return execution
     } catch (err) {
       execution.error = err instanceof Error ? err.message : String(err)
@@ -138,6 +155,15 @@ ${subtask.description}
   // All retries exhausted
   execution.status = "failed"
   execution.completedAt = Date.now()
+
+  // Toast: department failed
+  client.tui.showToast({
+    body: {
+      message: `❌ ${deptName} 失败: ${subtask.title}`,
+      variant: "error",
+    },
+  })
+
   return execution
 }
 
