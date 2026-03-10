@@ -3,14 +3,15 @@ name: Publish to npm
 on:
   push:
     tags:
-      - 'v*'
+      - 'emperor-v*'
+      - 'commander-v*'
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write  # Required for npm provenance
+      id-token: write
 
     steps:
       - name: Checkout code
@@ -21,21 +22,46 @@ jobs:
         with:
           bun-version: latest
 
-      - name: Install dependencies
+      - name: Install root dependencies
         run: bun install
+
+      - name: Install plugin SDK dependencies
+        run: bun install
+        working-directory: .opencode
 
       - name: Type check
         run: bun run build
 
-      - name: Run tests (skip if no test files)
+      - name: Determine plugin from tag
+        id: plugin
         run: |
-          if [ -f "$(find . -name '*.test.ts' -o -name '*.spec.ts' 2>/dev/null | head -1)" ]; then
-            bun test
+          TAG="${GITHUB_REF#refs/tags/}"
+          if [[ "$TAG" == emperor-v* ]]; then
+            echo "dir=.opencode/plugins/emperor" >> $GITHUB_OUTPUT
+            echo "name=emperor" >> $GITHUB_OUTPUT
+            echo "version=${TAG#emperor-v}" >> $GITHUB_OUTPUT
+          elif [[ "$TAG" == commander-v* ]]; then
+            echo "dir=.opencode/plugins/commander" >> $GITHUB_OUTPUT
+            echo "name=commander" >> $GITHUB_OUTPUT
+            echo "version=${TAG#commander-v}" >> $GITHUB_OUTPUT
           else
-            echo "No test files found, skipping tests"
+            echo "::error::Unknown tag pattern: $TAG"
+            exit 1
           fi
 
-      - name: Publish to npm
+      - name: Verify version matches package.json
+        working-directory: ${{ steps.plugin.outputs.dir }}
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          TAG_VERSION="${{ steps.plugin.outputs.version }}"
+          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Tag version ($TAG_VERSION) does not match package.json version ($PKG_VERSION)"
+            exit 1
+          fi
+          echo "✅ Version match: $PKG_VERSION"
+
+      - name: Publish ${{ steps.plugin.outputs.name }}
+        working-directory: ${{ steps.plugin.outputs.dir }}
         run: |
           echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > .npmrc
           npm config set provenance true
