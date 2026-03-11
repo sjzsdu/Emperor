@@ -16,6 +16,12 @@ import { HiveStore } from "./store"
 
 export const HivePlugin: Plugin = async ({ client, directory }) => {
   const config = loadConfig(directory)
+
+  // Show initializing progress
+  client.tui.showToast({
+    body: { message: "🐝 Hive: 初始化中...", variant: "info" },
+  })
+
   const store = new HiveStore(directory, config.store.dataDir)
 
   // EventBus with persistence
@@ -28,7 +34,11 @@ export const HivePlugin: Plugin = async ({ client, directory }) => {
   // Session → Domain mapping
   const sessionToDomain = new Map<string, string>()
 
-  // Discover domains
+  // Discover domains - show progress
+  client.tui.showToast({
+    body: { message: "🐝 Hive: 扫描项目结构...", variant: "info" },
+  })
+
   const domains = await discoverDomains(directory, config, client)
 
   // Subscribe domains to EventBus
@@ -37,6 +47,10 @@ export const HivePlugin: Plugin = async ({ client, directory }) => {
   }
 
   // Generate agent configs
+  client.tui.showToast({
+    body: { message: `🐝 Hive: 生成 ${domains.length} 个领域代理...`, variant: "info" },
+  })
+
   const agents = generateAgents(domains, config)
 
   // Set up autonomy handler

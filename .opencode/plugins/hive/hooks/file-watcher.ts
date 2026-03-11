@@ -12,13 +12,13 @@ export function createFileWatcherHook(
   return async (
     input: {
       sessionID?: string
-      tool: { name: string }
+      tool: string
+      callID?: string
       args: Record<string, unknown>
     },
-    output: { result: unknown },
+    output: { title: string; output: string; metadata: any },
   ) => {
-    // Only intercept write/edit tools
-    const toolName = input.tool.name
+    const toolName = input.tool
     if (toolName !== "write" && toolName !== "edit") return
 
     // Get file path from tool args
