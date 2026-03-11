@@ -4,15 +4,12 @@ import type { HiveConfig, HiveUserConfig } from "./types"
 
 const DEFAULTS: Omit<HiveConfig, "domains"> = {
   discovery: {
-    model: "anthropic/claude-sonnet-4-20250514",
     autoRefresh: true,
   },
   coordination: {
     autonomyLevel: "full",
   },
-  queen: {
-    model: "anthropic/claude-sonnet-4-20250514",
-  },
+  queen: {},
   store: {
     dataDir: ".hive",
   },

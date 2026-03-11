@@ -82,14 +82,14 @@ export interface HiveUserConfig {
 export interface HiveConfig {
   domains: Record<string, Partial<Domain> & { disabled?: boolean }>
   discovery: {
-    model: string
+    model?: string
     autoRefresh: boolean
   }
   coordination: {
     autonomyLevel: AutonomyLevel
   }
   queen: {
-    model: string
+    model?: string
   }
   store: {
     dataDir: string

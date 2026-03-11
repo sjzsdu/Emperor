@@ -114,7 +114,7 @@ describe("Hive integration", () => {
     expect(config.coordination.autonomyLevel).toBe("full")
     expect(config.discovery.autoRefresh).toBe(true)
     expect(config.store.dataDir).toBe(".hive")
-    expect(config.queen.model).toContain("anthropic/")
+    expect(config.queen.model).toBeUndefined()
   })
 
   test("eventbus cleanup removes old consumed events", () => {

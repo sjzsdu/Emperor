@@ -34,7 +34,7 @@ export async function analyzeWithLLM(
   client: OpencodeClient,
   directory: string,
   staticDomains: Domain[],
-  model: string,
+  model?: string,
 ): Promise<Domain[]> {
   const context = gatherProjectContext(directory)
   const staticSummary = staticDomains.map(d =>

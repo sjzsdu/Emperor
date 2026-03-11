@@ -15,14 +15,17 @@ export function generateAgents(
   const agents: Record<string, AgentConfig> = {}
 
   // Queen (coordinator)
-  agents["queen"] = {
+  const queenConfig: AgentConfig = {
     name: "queen",
     description: "Hive Coordinator — analyzes requirements, coordinates domain agents",
     mode: "primary",
     color: "#F59E0B",
-    model: config.queen.model,
     prompt: buildQueenPrompt(domains),
   }
+  if (config.queen.model) {
+    queenConfig.model = config.queen.model
+  }
+  agents["queen"] = queenConfig
 
   // Domain agents
   for (let i = 0; i < domains.length; i++) {

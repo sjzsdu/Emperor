@@ -5,40 +5,63 @@ import { DiscoveryCache } from "./cache"
 import { analyzeWithLLM } from "./analyzer"
 import { mergeDomains } from "./merger"
 
-export async function discoverDomains(
+export function discoverDomains(
   directory: string,
   config: HiveConfig,
   client: OpencodeClient,
-): Promise<Domain[]> {
+): Domain[] {
   const cache = new DiscoveryCache(directory, config.store.dataDir)
   const scan = scanProject(directory)
 
-  // Check cache
+  // Check cache — if LLM analysis was done before, use it
   if (cache.isValid(scan.structureHash)) {
     const cached = cache.load()!
     return mergeDomains(cached.domains, config.domains)
   }
 
-  // Static scan gives immediate results
-  let domains = scan.domains
+  // Static scan gives immediate results (never blocks startup)
+  const domains = scan.domains
 
-  // LLM enrichment (async, may be slow)
-  try {
-    domains = await analyzeWithLLM(client, directory, domains, config.discovery.model)
-  } catch (err) {
-    console.warn(`[hive] LLM analysis failed, using static scan results: ${err}`)
-  }
-
-  // Cache results
+  // Cache static results
   cache.save({
     structureHash: scan.structureHash,
     discoveredAt: Date.now(),
-    source: "llm",
+    source: "static",
     domains,
   })
 
-  // Merge with user config
+  // Fire LLM enrichment in background — won't block startup
+  enrichDomainsInBackground(directory, config, client, cache, scan.structureHash, domains)
+
+  // Return static results immediately
   return mergeDomains(domains, config.domains)
+}
+
+function enrichDomainsInBackground(
+  directory: string,
+  config: HiveConfig,
+  client: OpencodeClient,
+  cache: DiscoveryCache,
+  structureHash: string,
+  staticDomains: Domain[],
+): void {
+  // Skip LLM if autoRefresh disabled
+  if (!config.discovery.autoRefresh) {
+    return
+  }
+
+  analyzeWithLLM(client, directory, staticDomains, config.discovery.model)
+    .then((enriched) => {
+      cache.save({
+        structureHash,
+        discoveredAt: Date.now(),
+        source: "llm",
+        domains: enriched,
+      })
+    })
+    .catch(() => {
+      // Silently fail - static results are already being used
+    })
 }
 
 export { scanProject } from "./scanner"
