@@ -1,3 +1,6 @@
 logs
 node_modules
 .opencode/plugins/emperor/data/
+.worktrees/
+.hive/
+.opencode/plugins/hive/data/
