@@ -1,91 +1,64 @@
-import type { Agent , OpencodeClient} from "sjz-opencode-sdk"
 import type { Domain, HiveConfig } from "../types"
-import { scanProject } from "./scanner"
 import { DiscoveryCache } from "./cache"
-import { analyzeWithLLM } from "./analyzer"
 import { mergeDomains } from "./merger"
 import { generateAgents, toAgent } from "../agents/index"
+
+function registerAllAgents(domains: Domain[], config: HiveConfig, registerAgent: (agent: any) => Promise<void>): void {
+  const agents = generateAgents(domains, config)
+
+  if (agents["queen"]) {
+    registerAgent(toAgent(agents["queen"]))
+  }
+
+  for (const domain of domains) {
+    if (agents[domain.id] && !domain.disabled) {
+      registerAgent(toAgent(agents[domain.id]))
+    }
+  }
+}
 
 export function discoverDomains(
   directory: string,
   config: HiveConfig,
-  client: OpencodeClient,
   registerAgent?: (agent: any) => Promise<void>,
 ): Domain[] {
   const cache = new DiscoveryCache(directory, config.store.dataDir)
-  const scan = scanProject(directory)
+  const cached = cache.load()
 
-  // Check cache — if LLM analysis was done before, use it
-  if (cache.isValid(scan.structureHash)) {
-    const cached = cache.load()!
-    return mergeDomains(cached.domains, config.domains)
+  if (!cached || !cached.domains || cached.domains.length === 0) {
+    console.log("[hive] No domains found. Run 'hive-init' to create domains.json")
+    return []
   }
 
-  // Static scan gives immediate results (never blocks startup)
-  const domains = scan.domains
+  const domains = mergeDomains(cached.domains, config.domains)
 
-  // Cache static results
-  cache.save({
-    structureHash: scan.structureHash,
-    discoveredAt: Date.now(),
-    source: "static",
-    domains,
-  })
+  if (registerAgent) {
+    registerAllAgents(domains, config, registerAgent)
+  }
 
-  // Fire LLM enrichment in background — won't block startup
-  enrichDomainsInBackground(directory, config, client, registerAgent, cache, scan.structureHash, domains)
-
-  // Return static results immediately
-  return mergeDomains(domains, config.domains)
+  return domains
 }
 
-function enrichDomainsInBackground(
+export function reloadDomains(
   directory: string,
   config: HiveConfig,
-  client: OpencodeClient,
-  registerAgent: ((agent: any) => Promise<void>) | undefined,
-  cache: DiscoveryCache,
-  structureHash: string,
-  staticDomains: Domain[],
-): void {
-  // Skip LLM if autoRefresh disabled
-  if (!config.discovery.autoRefresh) {
-    return
+  registerAgent?: (agent: any) => Promise<void>,
+): Domain[] {
+  const cache = new DiscoveryCache(directory, config.store.dataDir)
+  const cached = cache.load()
+
+  if (!cached || !cached.domains || cached.domains.length === 0) {
+    return []
   }
 
-  analyzeWithLLM(client, directory, staticDomains, config.discovery.model)
-    .then((enriched) => {
-      // Save enriched domains to cache
-      cache.save({
-        structureHash,
-        discoveredAt: Date.now(),
-        source: "llm",
-        domains: enriched,
-      })
+  const domains = mergeDomains(cached.domains, config.domains)
 
-      // Dynamically register new/updated agents
-      if (registerAgent) {
-        const enrichedAgents = generateAgents(enriched, config)
+  if (registerAgent) {
+    registerAllAgents(domains, config, registerAgent)
+  }
 
-        // Register Queen
-        if (enrichedAgents["queen"]) {
-          registerAgent(toAgent(enrichedAgents["queen"]))
-        }
-
-        // Register domain agents
-        for (const domain of enriched) {
-          if (enrichedAgents[domain.id]) {
-            registerAgent(toAgent(enrichedAgents[domain.id]))
-          }
-        }
-      }
-    })
-    .catch(() => {
-      // Silently fail - static results are already being used
-    })
+  return domains
 }
 
-export { scanProject } from "./scanner"
 export { DiscoveryCache } from "./cache"
-export { analyzeWithLLM } from "./analyzer"
 export { mergeDomains } from "./merger"

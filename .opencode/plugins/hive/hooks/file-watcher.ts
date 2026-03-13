@@ -1,5 +1,6 @@
 import type { HiveEventBus } from "../eventbus/bus"
-import type { Domain } from "../types"
+import type { Domain, HiveConfig } from "../types"
+import { reloadDomains } from "../discovery/index"
 
 type AutonomyHandler = (changedDomainId: string, filePath: string) => Promise<void>
 
@@ -8,6 +9,9 @@ export function createFileWatcherHook(
   domains: Domain[],
   sessionToDomain: Map<string, string>,
   autonomyHandler: AutonomyHandler,
+  directory?: string,
+  config?: HiveConfig,
+  registerAgent?: (agent: any) => Promise<void>,
 ) {
   return async (
     input: {
@@ -21,19 +25,20 @@ export function createFileWatcherHook(
     const toolName = input.tool
     if (toolName !== "write" && toolName !== "edit") return
 
-    // Get file path from tool args
     const filePath = (input.args.filePath ?? input.args.path ?? "") as string
     if (!filePath) return
 
-    // Determine which domain owns this file
+    if (filePath.endsWith(".hive/domains.json") && directory && config) {
+      reloadDomains(directory, config, registerAgent)
+      return
+    }
+
     const ownerDomain = domains.find(d =>
       d.paths.some(p => filePath.includes(p))
     )
 
-    // Determine who made the change
     const sourceDomain = input.sessionID ? sessionToDomain.get(input.sessionID) : undefined
 
-    // Publish file_changed event
     eventBus.publish({
       type: "file_changed",
       source: sourceDomain ?? "system",
@@ -48,7 +53,6 @@ export function createFileWatcherHook(
       },
     })
 
-    // If a domain agent modified a file outside its own domain, detect potential conflict
     if (sourceDomain && ownerDomain && sourceDomain !== ownerDomain.id) {
       eventBus.publish({
         type: "conflict_detected",
@@ -61,11 +65,8 @@ export function createFileWatcherHook(
       })
     }
 
-    // Trigger autonomy handler for the affected domain
     if (ownerDomain) {
-      await autonomyHandler(ownerDomain.id, filePath).catch(() => {
-        // Autonomy handler failures are non-fatal
-      })
+      await autonomyHandler(ownerDomain.id, filePath).catch(() => {})
     }
   }
 }
