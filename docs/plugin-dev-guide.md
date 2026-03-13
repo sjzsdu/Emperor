@@ -36,13 +36,13 @@ OpenCode 支持两种插件形式：
    - 适合项目特定的工具
 
 2. **NPM 插件**: 通过 `opencode.jsonc` 的 `plugin` 字段配置
+
    ```jsonc
    {
-     "plugin": [
-       "my-opencode-plugin@1.0.0"
-     ]
+     "plugin": ["my-opencode-plugin@1.0.0"],
    }
    ```
+
    - 需要在配置中显式声明
    - 适合可发布的通用工具
 
@@ -58,6 +58,11 @@ export type PluginInput = {
   worktree: string
   serverUrl: URL
   $: BunShell
+  registerAgent(agent: Agent): Promise<void>
+  unregisterAgent(name: string): Promise<void>
+  listAgents(): Promise<Agent[]>
+  registerCommand(cmd: CommandInput): Promise<void>
+  unregisterCommand(name: string): Promise<void>
 }
 
 export type Plugin = (input: PluginInput) => Promise<Hooks>
@@ -131,19 +136,19 @@ export const SearchTool = tool({
   async execute(args, context) {
     // 访问项目信息
     const { directory, worktree } = context
-    
+
     // 记录元数据
     context.metadata({
       title: `Search: ${args.query}`,
-      metadata: { query: args.query }
+      metadata: { query: args.query },
     })
-    
+
     // 执行搜索逻辑
     const results = await performSearch(args.query, args.limit)
-    
+
     // 返回字符串，核心系统会自动包装为对象
     return formatResults(results)
-  }
+  },
 })
 
 // 使用 tool.schema 访问 zod 用于类型验证
@@ -152,16 +157,16 @@ const schema = tool.schema
 
 ### ToolContext 详解
 
-| 属性 | 类型 | 说明 |
-|------|------|------|
-| `sessionID` | string | 当前会话 ID |
-| `messageID` | string | 当前消息 ID |
-| `agent` | string | 当前使用的 Agent 名称 |
-| `directory` | string | 当前项目目录 |
-| `worktree` | string | 工作区根目录 |
-| `abort` | AbortSignal | 中止信号，用于取消长时间操作 |
-| `metadata()` | function | 设置工具执行元数据 |
-| `ask()` | function | 请求用户授权 |
+| 属性         | 类型        | 说明                         |
+| ------------ | ----------- | ---------------------------- |
+| `sessionID`  | string      | 当前会话 ID                  |
+| `messageID`  | string      | 当前消息 ID                  |
+| `agent`      | string      | 当前使用的 Agent 名称        |
+| `directory`  | string      | 当前项目目录                 |
+| `worktree`   | string      | 工作区根目录                 |
+| `abort`      | AbortSignal | 中止信号，用于取消长时间操作 |
+| `metadata()` | function    | 设置工具执行元数据           |
+| `ask()`      | function    | 请求用户授权                 |
 
 ### 注册 Tool
 
@@ -174,7 +179,7 @@ export default async function myPlugin(input) {
     tool: {
       search: SearchTool,
       // 可以定义多个 tool
-    }
+    },
   }
 }
 ```
@@ -198,10 +203,12 @@ export const Info = z.object({
   temperature: z.number().optional(),
   color: z.string().optional(),
   permission: PermissionNext.Ruleset,
-  model: z.object({
-    modelID: z.string(),
-    providerID: z.string(),
-  }).optional(),
+  model: z
+    .object({
+      modelID: z.string(),
+      providerID: z.string(),
+    })
+    .optional(),
   variant: z.string().optional(),
   prompt: z.string().optional(),
   options: z.record(z.string(), z.any()),
@@ -211,12 +218,12 @@ export const Info = z.object({
 
 ### Agent 模式
 
-| 模式 | 说明 | 使用场景 |
-|------|------|----------|
-| `primary` | 主 Agent，可执行工具 | 默认的 build、plan Agent |
-| `subagent` | 子 Agent，被主 Agent 调用 | explore、general Agent |
-| `hidden` | 隐藏 Agent，不显示给用户 | compaction、title Agent |
-| `all` | 可作为主 Agent 或子 Agent | 自定义 Agent 的默认模式，可根据调用场景自动适配 |
+| 模式       | 说明                      | 使用场景                                        |
+| ---------- | ------------------------- | ----------------------------------------------- |
+| `primary`  | 主 Agent，可执行工具      | 默认的 build、plan Agent                        |
+| `subagent` | 子 Agent，被主 Agent 调用 | explore、general Agent                          |
+| `hidden`   | 隐藏 Agent，不显示给用户  | compaction、title Agent                         |
+| `all`      | 可作为主 Agent 或子 Agent | 自定义 Agent 的默认模式，可根据调用场景自动适配 |
 
 ### 内置 Agent
 
@@ -282,10 +289,10 @@ OpenCode 内置以下 Agent：
       "permission": {
         "read": "allow",
         "grep": "allow",
-        "bash": "ask"
-      }
-    }
-  }
+        "bash": "ask",
+      },
+    },
+  },
 }
 ```
 
@@ -315,14 +322,14 @@ export const TaskTool = Tool.define("task", async (ctx) => {
     async execute(params, ctx) {
       // 获取子 Agent
       const agent = await Agent.get(params.subagent_type)
-      
+
       // 创建子会话
       const session = await Session.create({
         parentID: ctx.sessionID,
         title: params.description + ` (@${agent.name} subagent)`,
         permission: [...],
       })
-      
+
       // 执行子任务
       const result = await SessionPrompt.prompt({
         messageID,
@@ -331,7 +338,7 @@ export const TaskTool = Tool.define("task", async (ctx) => {
         agent: agent.name,
         parts: promptParts,
       })
-      
+
       // 返回结果
       return {
         title: params.description,
@@ -416,11 +423,11 @@ export const Ruleset = Rule.array()
 
 ### 权限操作
 
-| 操作 | 说明 |
-|------|------|
+| 操作    | 说明                   |
+| ------- | ---------------------- |
 | `allow` | 自动允许，无需用户确认 |
-| `deny` | 自动拒绝，禁止操作 |
-| `ask` | 请求用户授权 |
+| `deny`  | 自动拒绝，禁止操作     |
+| `ask`   | 请求用户授权           |
 
 ### 权限模式匹配
 
@@ -477,65 +484,65 @@ OpenCode 插件系统提供以下 17 个 Hook，按功能分类如下：
 
 #### 1. 基础 Hooks
 
-| Hook 名称 | 输入 | 输出 | 说明 |
-|-----------|------|------|------|
-| `event` | `{ event: Event }` | `void` | 全局事件监听，处理所有系统事件 |
-| `config` | `Config` | `void` | 配置加载时调用，可修改配置 |
-| `tool` | - | `{[key: string]: ToolDefinition}` | 注册自定义工具 |
-| `auth` | - | `AuthHook` | 定义认证方式（OAuth/API Key） |
+| Hook 名称 | 输入               | 输出                              | 说明                           |
+| --------- | ------------------ | --------------------------------- | ------------------------------ |
+| `event`   | `{ event: Event }` | `void`                            | 全局事件监听，处理所有系统事件 |
+| `config`  | `Config`           | `void`                            | 配置加载时调用，可修改配置     |
+| `tool`    | -                  | `{[key: string]: ToolDefinition}` | 注册自定义工具                 |
+| `auth`    | -                  | `AuthHook`                        | 定义认证方式（OAuth/API Key）  |
 
 #### 2. 聊天相关 Hooks
 
-| Hook 名称 | 输入 | 输出 | 说明 |
-|-----------|------|------|------|
-| `chat.message` | `sessionID`, `agent`, `model`, `messageID`, `variant` | `message: UserMessage`, `parts: Part[]` | 新消息到达时调用 |
-| `chat.params` | `sessionID`, `agent`, `model`, `provider`, `message` | `temperature`, `topP`, `topK`, `options` | 修改发送给 LLM 的参数 |
-| `chat.headers` | `sessionID`, `agent`, `model`, `provider`, `message` | `headers: Record<string, string>` | 修改请求头 |
-| `experimental.chat.messages.transform` | `{}` | `messages: {info: Message, parts: Part[]}[]` | 转换聊天消息 |
-| `experimental.chat.system.transform` | `sessionID?`, `model` | `system: string[]` | 转换系统提示 |
+| Hook 名称                              | 输入                                                  | 输出                                         | 说明                  |
+| -------------------------------------- | ----------------------------------------------------- | -------------------------------------------- | --------------------- |
+| `chat.message`                         | `sessionID`, `agent`, `model`, `messageID`, `variant` | `message: UserMessage`, `parts: Part[]`      | 新消息到达时调用      |
+| `chat.params`                          | `sessionID`, `agent`, `model`, `provider`, `message`  | `temperature`, `topP`, `topK`, `options`     | 修改发送给 LLM 的参数 |
+| `chat.headers`                         | `sessionID`, `agent`, `model`, `provider`, `message`  | `headers: Record<string, string>`            | 修改请求头            |
+| `experimental.chat.messages.transform` | `{}`                                                  | `messages: {info: Message, parts: Part[]}[]` | 转换聊天消息          |
+| `experimental.chat.system.transform`   | `sessionID?`, `model`                                 | `system: string[]`                           | 转换系统提示          |
 
 #### 3. 工具相关 Hooks
 
-| Hook 名称 | 输入 | 输出 | 说明 |
-|-----------|------|------|------|
-| `tool.definition` | `toolID: string` | `description: string`, `parameters: any` | 修改工具定义（描述和参数）发送给 LLM |
-| `tool.execute.before` | `tool`, `sessionID`, `callID` | `args: any` | 工具执行前调用，可修改参数 |
-| `tool.execute.after` | `tool`, `sessionID`, `callID`, `args` | `title`, `output`, `metadata` | 工具执行后调用，可修改结果 |
+| Hook 名称             | 输入                                  | 输出                                     | 说明                                 |
+| --------------------- | ------------------------------------- | ---------------------------------------- | ------------------------------------ |
+| `tool.definition`     | `toolID: string`                      | `description: string`, `parameters: any` | 修改工具定义（描述和参数）发送给 LLM |
+| `tool.execute.before` | `tool`, `sessionID`, `callID`         | `args: any`                              | 工具执行前调用，可修改参数           |
+| `tool.execute.after`  | `tool`, `sessionID`, `callID`, `args` | `title`, `output`, `metadata`            | 工具执行后调用，可修改结果           |
 
 #### 4. 权限相关 Hooks
 
-| Hook 名称 | 输入 | 输出 | 说明 |
-|-----------|------|------|------|
+| Hook 名称        | 输入         | 输出           | 说明   |
+| ---------------- | ------------ | -------------- | ------ | -------- | ------------------------------------ |
 | `permission.ask` | `Permission` | `status: "ask" | "deny" | "allow"` | 权限请求时调用，可拦截或修改权限决策 |
 
 #### 5. Shell 相关 Hooks
 
-| Hook 名称 | 输入 | 输出 | 说明 |
-|-----------|------|------|------|
+| Hook 名称   | 输入                           | 输出                          | 说明                |
+| ----------- | ------------------------------ | ----------------------------- | ------------------- |
 | `shell.env` | `cwd`, `sessionID?`, `callID?` | `env: Record<string, string>` | 修改 shell 环境变量 |
 
 #### 6. 命令相关 Hooks
 
-| Hook 名称 | 输入 | 输出 | 说明 |
-|-----------|------|------|------|
+| Hook 名称                | 输入                                | 输出            | 说明               |
+| ------------------------ | ----------------------------------- | --------------- | ------------------ |
 | `command.execute.before` | `command`, `sessionID`, `arguments` | `parts: Part[]` | TUI 命令执行前调用 |
 
 #### 7. Agent 相关 Hooks
 
-| Hook 名称 | 输入 | 输出 | 说明 |
-|-----------|------|------|------|
-| `agent.register` | `{ agent: Agent }` | - | Agent 注册时调用 |
-| `agent.unregister` | `{ agent: Agent }` | - | Agent 注销时调用 |
-| `agent.list` | - | `agents: Agent[]` | 获取所有 Agent 列表 |
+| Hook 名称          | 输入               | 输出              | 说明                |
+| ------------------ | ------------------ | ----------------- | ------------------- |
+| `agent.register`   | `{ agent: Agent }` | -                 | Agent 注册时调用    |
+| `agent.unregister` | `{ agent: Agent }` | -                 | Agent 注销时调用    |
+| `agent.list`       | -                  | `agents: Agent[]` | 获取所有 Agent 列表 |
 
-| Hook 名称 | 输入 | 输出 | 说明 |
-|-----------|------|------|------|
+| Hook 名称                         | 输入                | 输出                                   | 说明                                |
+| --------------------------------- | ------------------- | -------------------------------------- | ----------------------------------- |
 | `experimental.session.compacting` | `sessionID: string` | `context: string[]`, `prompt?: string` | 会话压缩前调用，可自定义压缩 prompt |
 
 #### 8. 文本处理 Hooks
 
-| Hook 名称 | 输入 | 输出 | 说明 |
-|-----------|------|------|------|
+| Hook 名称                    | 输入                               | 输出           | 说明                           |
+| ---------------------------- | ---------------------------------- | -------------- | ------------------------------ |
 | `experimental.text.complete` | `sessionID`, `messageID`, `partID` | `text: string` | 文本完成时调用，可修改输出文本 |
 
 ### TypeScript 类型定义
@@ -588,10 +595,7 @@ export interface Hooks {
     input: { tool: string; sessionID: string; callID: string; args: any },
     output: { title: string; output: string; metadata: any },
   ) => Promise<void>
-  "tool.definition"?: (
-    input: { toolID: string },
-    output: { description: string; parameters: any },
-  ) => Promise<void>
+  "tool.definition"?: (input: { toolID: string }, output: { description: string; parameters: any }) => Promise<void>
 
   // Shell 相关
   "shell.env"?: (
@@ -631,7 +635,7 @@ export default async function myPlugin(input) {
         // 在命令前添加前缀
         output.args.command = "set -e; " + output.args.command
       }
-    }
+    },
   }
 }
 ```
@@ -662,7 +666,7 @@ export default async function myPlugin(input) {
         // 添加元数据
         output.metadata.readLength = output.output.length
       }
-    }
+    },
   }
 }
 ```
@@ -677,7 +681,7 @@ export default async function myPlugin(input) {
       output.context.push("Custom context for compaction")
       // 或完全替换压缩 prompt
       output.prompt = "Custom compaction prompt..."
-    }
+    },
   }
 }
 ```
@@ -692,7 +696,7 @@ export default async function myPlugin(input) {
       if (input.model.providerID === "my-provider") {
         output.headers["X-Custom-Header"] = "value"
       }
-    }
+    },
   }
 }
 ```
@@ -707,7 +711,7 @@ export default async function myPlugin(input) {
         ...output.env,
         MY_CUSTOM_VAR: "value",
       }
-    }
+    },
   }
 }
 ```
@@ -745,7 +749,7 @@ export default async function myPlugin(input: PluginInput): Promise<Hooks> {
       { permission: "grep", pattern: "*", action: "allow" },
       { permission: "edit", pattern: "*", action: "deny" },
     ],
-    options: {}
+    options: {},
   })
 
   return {}
@@ -775,7 +779,7 @@ export default async function myPlugin(input: PluginInput): Promise<Hooks> {
     },
     "agent.unregister": async ({ agent }) => {
       console.log("Agent unregistered:", agent.name)
-    }
+    },
   }
 }
 ```
@@ -786,7 +790,10 @@ export default async function myPlugin(input: PluginInput): Promise<Hooks> {
 export default async function myPlugin(input: PluginInput): Promise<Hooks> {
   // 获取所有已注册的 Agent（包括动态注册的）
   const agents = await input.listAgents()
-  console.log("Available agents:", agents.map(a => a.name))
+  console.log(
+    "Available agents:",
+    agents.map((a) => a.name),
+  )
 
   return {}
 }
@@ -821,6 +828,112 @@ interface Agent {
 
 ---
 
+## 动态 Command 注册
+
+OpenCode 支持在运行时动态注册和注销 Command（斜杠命令），无需重启或修改配置文件。
+
+### Command 是什么
+
+Command 是用户在 TUI 中通过 `/name` 触发的模板化提示词。执行时，模板内容会被发送给 LLM 处理。支持 `$1`、`$2`、`$ARGUMENTS` 等占位符，由用户输入的参数替换。
+
+### CommandInput 类型
+
+```typescript
+export type CommandInput = {
+  name: string // 命令名称，用户通过 /name 调用
+  template: string // prompt 模板，发送给 LLM
+  description?: string
+  agent?: string // 指定处理该命令的 Agent
+  model?: string // 指定使用的模型
+  subtask?: boolean // 是否作为子任务运行
+}
+```
+
+### 注册 Command
+
+```typescript
+export default async function myPlugin(input: PluginInput): Promise<Hooks> {
+  // 注册一个自定义 slash command
+  await input.registerCommand({
+    name: "deploy",
+    description: "Deploy the current project to production",
+    template: `Please deploy the project at ${input.directory} to production.
+Follow these steps:
+1. Run the test suite
+2. Build the project
+3. Deploy using the deploy script
+
+User arguments: $ARGUMENTS`,
+  })
+
+  return {}
+}
+```
+
+注册后用户可以在 TUI 中输入 `/deploy staging` 来触发。
+
+### 带参数占位符的 Command
+
+```typescript
+await input.registerCommand({
+  name: "migrate",
+  description: "Run database migration",
+  template: `Run database migration for environment $1.
+Migration name: $2
+Additional options: $ARGUMENTS`,
+})
+// 用法: /migrate production add_users_table --dry-run
+// $1 = "production", $2 = "add_users_table", $ARGUMENTS = "--dry-run"
+```
+
+### 指定 Agent 和模型
+
+```typescript
+await input.registerCommand({
+  name: "analyze",
+  description: "Deep code analysis",
+  agent: "explore", // 使用 explore agent（只读）
+  model: "anthropic/claude-sonnet-4-20250514", // 指定模型
+  subtask: true, // 作为子任务运行
+  template: `Analyze the codebase structure and provide a summary.
+Focus on: $ARGUMENTS`,
+})
+```
+
+### 注销 Command
+
+```typescript
+await input.unregisterCommand("deploy")
+```
+
+### 结合 Hooks 拦截 Command 执行
+
+可以通过 `command.execute.before` hook 在命令执行前修改或增强内容：
+
+```typescript
+export default async function myPlugin(input: PluginInput): Promise<Hooks> {
+  await input.registerCommand({
+    name: "review-pr",
+    description: "Review a pull request",
+    template: "Review PR #$1: $ARGUMENTS",
+  })
+
+  return {
+    "command.execute.before": async (input, output) => {
+      if (input.command === "review-pr") {
+        // 在模板展开后、发送给 LLM 前，追加额外上下文
+        output.parts.push({
+          type: "text",
+          text: "\n\nPlease focus on security and performance issues.",
+        })
+      }
+    },
+  }
+}
+```
+
+---
+
 ## 认证集成
 
 ### AuthHook 结构
@@ -832,7 +945,7 @@ export type AuthHook = {
   methods: AuthMethod[]
 }
 
-type AuthMethod = 
+type AuthMethod =
   | {
       type: "oauth"
       label: string
@@ -857,7 +970,7 @@ export async function MyAuthPlugin(input: PluginInput): Promise<Hooks> {
       async loader(getAuth, provider) {
         const auth = await getAuth()
         if (auth.type !== "oauth") return {}
-        
+
         return {
           apiKey: auth.access,
           async fetch(requestInput, init) {
@@ -865,7 +978,7 @@ export async function MyAuthPlugin(input: PluginInput): Promise<Hooks> {
             const req = new Request(requestInput, init)
             req.headers.set("Authorization", `Bearer ${auth.access}`)
             return fetch(req)
-          }
+          },
         }
       },
       methods: [
@@ -874,7 +987,7 @@ export async function MyAuthPlugin(input: PluginInput): Promise<Hooks> {
           label: "Login with Provider",
           authorize: async () => {
             const authUrl = "https://provider.com/oauth/authorize"
-            
+
             return {
               url: authUrl,
               instructions: "Please authorize in the browser",
@@ -888,12 +1001,12 @@ export async function MyAuthPlugin(input: PluginInput): Promise<Hooks> {
                   access: tokens.access_token,
                   expires: Date.now() + tokens.expires_in * 1000,
                 }
-              }
+              },
             }
-          }
-        }
-      ]
-    }
+          },
+        },
+      ],
+    },
   }
 }
 ```
@@ -942,15 +1055,15 @@ const MyTool = tool({
   },
   async execute(args, context) {
     const { directory, worktree } = context
-    
+
     context.metadata({
       title: `Operation: ${args.operation}`,
-      metadata: { operation: args.operation }
+      metadata: { operation: args.operation },
     })
-    
+
     // 实现你的逻辑
     return `Operation ${args.operation} completed with value: ${args.value}`
-  }
+  },
 })
 
 // 定义自定义 Agent 使用的工具
@@ -962,7 +1075,7 @@ const AnalysisTool = tool({
   async execute(args, context) {
     // 分析逻辑
     return analyzeCode(args.filePath, context.directory)
-  }
+  },
 })
 
 // 插件主函数
@@ -973,31 +1086,31 @@ export default async function myPlugin(input): Promise<Hooks> {
       myTool: MyTool,
       analysis: AnalysisTool,
     },
-    
+
     // 聊天消息拦截
     "chat.message": async (input, output) => {
       console.log("New message in session:", input.sessionID)
     },
-    
+
     // 工具执行前拦截
     "tool.execute.before": async (input, output) => {
       // 记录或修改参数
       console.log("Executing tool:", input.tool)
     },
-    
+
     // 工具执行后拦截
     "tool.execute.after": async (input, output) => {
       // 处理结果或添加元数据
       output.metadata.executedAt = Date.now()
     },
-    
+
     // 修改请求头
     "chat.headers": async (input, output) => {
       if (input.model.providerID === "openai") {
         output.headers["X-Custom-Header"] = "plugin-value"
       }
     },
-    
+
     // 自定义 shell 环境
     "shell.env": async (input, output) => {
       output.env = {
@@ -1017,11 +1130,11 @@ export default async function myPlugin(input): Promise<Hooks> {
   "plugin": [
     // NPM 插件
     "my-opencode-plugin@1.0.0",
-    
+
     // 本地插件 (放在 {tool,tools} 目录)
     // 不需要在这里注册，会自动发现
   ],
-  
+
   "agent": {
     "code-analyst": {
       "description": "Agent specialized in code analysis",
@@ -1033,10 +1146,10 @@ export default async function myPlugin(input): Promise<Hooks> {
         "grep": "allow",
         "glob": "allow",
         "edit": "deny",
-        "bash": "ask"
-      }
-    }
-  }
+        "bash": "ask",
+      },
+    },
+  },
 }
 ```
 
@@ -1067,7 +1180,7 @@ export const WrappedReadTool = tool({
     // 添加自定义处理逻辑
     const content = await originalReadTool.execute(args, context)
     return processContent(content)
-  }
+  },
 })
 ```
 
@@ -1076,13 +1189,13 @@ export const WrappedReadTool = tool({
 ```typescript
 export default async function myPlugin(input): Promise<Hooks> {
   const config = await input.client.config.get()
-  
+
   if (!config.features?.myFeature) {
     return {} // 功能未启用，返回空 hooks
   }
-  
+
   return {
-    tool: { myTool: MyTool }
+    tool: { myTool: MyTool },
   }
 }
 ```
@@ -1099,7 +1212,7 @@ export default async function myPlugin(input): Promise<Hooks> {
         // 记录错误但不影响原流程
         console.error("Plugin error:", error)
       }
-    }
+    },
   }
 }
 ```
@@ -1118,5 +1231,6 @@ export default async function myPlugin(input): Promise<Hooks> {
 6. **认证集成**: 支持 OAuth 和 API Key 两种认证方式
 
 更多示例请参考内置插件：
+
 - `packages/opencode/src/plugin/codex.ts` - Codex 认证插件
 - `packages/opencode/src/plugin/copilot.ts` - GitHub Copilot 认证插件

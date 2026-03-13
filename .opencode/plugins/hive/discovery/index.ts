@@ -10,7 +10,7 @@ export function discoverDomains(
   directory: string,
   config: HiveConfig,
   client: OpencodeClient,
-  registerAgent?: (agent: Agent) => Promise<void>,
+  registerAgent?: (agent: any) => Promise<void>,
 ): Domain[] {
   const cache = new DiscoveryCache(directory, config.store.dataDir)
   const scan = scanProject(directory)
@@ -43,7 +43,7 @@ function enrichDomainsInBackground(
   directory: string,
   config: HiveConfig,
   client: OpencodeClient,
-  registerAgent: ((agent: Agent) => Promise<void>) | undefined,
+  registerAgent: ((agent: any) => Promise<void>) | undefined,
   cache: DiscoveryCache,
   structureHash: string,
   staticDomains: Domain[],

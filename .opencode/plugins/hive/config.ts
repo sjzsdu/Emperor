@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import type { HiveConfig, HiveUserConfig } from "./types"
 
-const DEFAULTS: Omit<HiveConfig, "domains"> = {
+export const DEFAULTS: Omit<HiveConfig, "domains"> = {
   discovery: {
     autoRefresh: true,
   },

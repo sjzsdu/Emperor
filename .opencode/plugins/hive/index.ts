@@ -1,4 +1,4 @@
-import type { Plugin, Agent } from "sjz-opencode-sdk"
+import type { Plugin } from "sjz-opencode-sdk"
 import { loadConfig } from "./config"
 import { HiveEventBus } from "./eventbus/bus"
 import { discoverDomains } from "./discovery/index"
@@ -14,7 +14,7 @@ import { createFileWatcherHook } from "./hooks/file-watcher"
 import { createAutonomyHandler } from "./hooks/autonomy"
 import { HiveStore } from "./store"
 
-export const HivePlugin: Plugin = async ({ client, directory, registerAgent }) => {
+export const HivePlugin: Plugin = async ({ client, directory, registerAgent, registerCommand }) => {
   const config = loadConfig(directory)
   const store = new HiveStore(directory, config.store.dataDir)
 
@@ -44,6 +44,42 @@ export const HivePlugin: Plugin = async ({ client, directory, registerAgent }) =
   const autonomyHandler = createAutonomyHandler(
     eventBus, domains, config, client, sessionToDomain,
   )
+
+  // Register slash command
+  try {
+    await registerCommand({
+      name: "hive-init",
+      description: "初始化 Hive：创建配置文件和存储目录，自动发现项目中的 Domain",
+      subtask: true,
+      template: `
+请执行 Hive 初始化任务。
+
+## 用户参数
+$ARGUMENTS (如 --force 表示强制覆盖)
+
+## 任务说明
+1. 检查 .opencode/hive.json 是否已存在
+   - 如果存在且用户没有 --force 参数 → 跳过，报告已存在
+   - 如果存在且用户有 --force 参数 → 覆盖
+   - 如果不存在 → 创建
+
+2. 创建配置文件 .opencode/hive.json，内容如下：
+{
+  "discovery": { "autoRefresh": true },
+  "coordination": { "autonomyLevel": "full" },
+  "queen": {},
+  "store": { "dataDir": ".hive" }
+}
+
+3. 创建存储目录 .hive
+
+4. 使用 bash 和 write_file 工具完成上述任务
+5. 完成后报告初始化结果
+      `.trim(),
+    })
+  } catch (error) {
+    console.error("[hive] Failed to register hive-init command:", error)
+  }
 
   return {
     config: createConfigHook(agents),
