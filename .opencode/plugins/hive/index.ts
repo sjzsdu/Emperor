@@ -13,6 +13,9 @@ import { createSystemTransformHook } from "./hooks/system-transform"
 import { createFileWatcherHook } from "./hooks/file-watcher"
 import { createAutonomyHandler } from "./hooks/autonomy"
 import { HiveStore } from "./store"
+import { HivePipeline } from "./pipeline"
+import { createRunTool } from "./tools/run"
+import { createEventReactorHook } from "./hooks/event-reactor"
 
 export const HivePlugin: Plugin = async ({ client, directory, registerAgent, registerCommand }) => {
   const config = loadConfig(directory)
@@ -42,6 +45,9 @@ export const HivePlugin: Plugin = async ({ client, directory, registerAgent, reg
   const autonomyHandler = createAutonomyHandler(
     eventBus, domains, config, client, sessionToDomain,
   )
+
+  // Initialize Hive pipeline (wire-up once pipeline.ts is available)
+  const pipeline = new HivePipeline(eventBus, domains, client, sessionToDomain, config)
 
   // Register slash command
   try {
@@ -181,6 +187,13 @@ $ARGUMENTS (如 --force 表示强制覆盖)
     console.error("[hive] Failed to register hive-init command:", error)
   }
 
+  // Prepare hooks and tools
+  const fileWatcherHook = createFileWatcherHook(
+    eventBus, domains, sessionToDomain, autonomyHandler,
+    directory, config, registerAgent,
+  )
+  const eventReactorHook = createEventReactorHook(eventBus, domains, client, sessionToDomain)
+
   return {
     config: createConfigHook(agents),
 
@@ -188,17 +201,19 @@ $ARGUMENTS (如 --force 表示强制覆盖)
       eventBus, sessionToDomain,
     ),
 
-    "tool.execute.after": createFileWatcherHook(
-      eventBus, domains, sessionToDomain, autonomyHandler,
-      directory, config, registerAgent,
-    ),
+    // Combine file-watcher hook with event-reactor hook
+    "tool.execute.after": async (input, output) => {
+      await fileWatcherHook(input, output)
+      await eventReactorHook(input, output)
+    },
 
     tool: {
       hive_emit: createEmitTool(eventBus, sessionToDomain),
-      hive_status: createStatusTool(domains, eventBus),
+      hive_status: createStatusTool(domains, eventBus, pipeline),
       hive_broadcast: createBroadcastTool(eventBus, domains, client, sessionToDomain, config),
       hive_negotiate: createNegotiateTool(eventBus, domains, client, sessionToDomain),
       hive_dispatch: createDispatchTool(eventBus, domains, client, sessionToDomain),
+      hive_run: createRunTool(pipeline),
     },
   }
 }

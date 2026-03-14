@@ -32,6 +32,10 @@ export type EventType =
   | "help_request"
   | "conflict_detected"
   | "info"
+  | "pipeline_started"
+  | "pipeline_phase"
+  | "pipeline_completed"
+  | "pipeline_failed"
 
 export interface HiveEvent {
   id: string
@@ -92,4 +96,28 @@ export interface HiveConfig {
   store: {
     dataDir: string
   }
+}
+
+// === Pipeline (Hive) types ===
+
+// Phases for the new automated Hive pipeline
+export type PipelinePhase = "assess" | "filter" | "negotiate" | "dispatch" | "complete"
+
+export interface PipelineLog {
+  timestamp: number
+  phase: PipelinePhase
+  message: string
+  domain?: string
+  detail?: string
+}
+
+export interface PipelineState {
+  id: string
+  requirement: string
+  status: "running" | "completed" | "failed"
+  startedAt: number
+  completedAt?: number
+  logs: PipelineLog[]
+  assessments: Array<{ domain: string; relevance: string; analysis: string; workload: string }>
+  dispatched: Array<{ domain: string; status: "pending" | "running" | "completed" | "failed"; response?: string }>
 }

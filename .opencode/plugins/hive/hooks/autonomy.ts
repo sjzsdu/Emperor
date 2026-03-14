@@ -29,14 +29,19 @@ export function createAutonomyHandler(
     )
     if (dependentDomains.length === 0) return
 
-    // Check if there's a breaking_change event from the changed domain
+    
     const events = eventBus.getAll()
     const hasBreakingChange = events.some(e =>
       e.source === changedDomainId &&
       e.type === "breaking_change" &&
       e.status === "pending"
     )
-    if (!hasBreakingChange) return
+    const hasConflict = events.some(e =>
+      e.source === changedDomainId &&
+      e.type === "conflict_detected" &&
+      e.status === "pending"
+    )
+    if (!hasBreakingChange && !hasConflict) return
 
     for (const depDomain of dependentDomains) {
       if (autonomyLevel === "propose") {
@@ -50,7 +55,7 @@ export function createAutonomyHandler(
             data: { triggeredBy: changedDomainId, filePath },
           },
         })
-      } else if (autonomyLevel === "full") {
+        } else if (autonomyLevel === "full") {
         // Auto-execute adaptation
         eventBus.publish({
           type: "action_proposal",
@@ -67,18 +72,15 @@ export function createAutonomyHandler(
           })
           const sessionId = session.data!.id
           sessionToDomain.set(sessionId, depDomain.id)
+          const eventDesc = hasBreakingChange
+            ? `@${changedDomainId} 发布了破坏性变更，涉及文件: ${filePath}`
+            : `检测到冲突: 另一个域修改了你管辖范围内的文件: ${filePath}`
 
           const response = await client.session.prompt({
             path: { id: sessionId },
             body: {
               agent: depDomain.id,
-              parts: [{ type: "text" as const, text: `@${changedDomainId} 发布了破坏性变更，涉及文件: ${filePath}
-
-请：
-1. 检查你领域内受影响的代码
-2. 进行必要的适配修改
-3. 运行测试验证
-4. 通过 hive_emit 报告完成情况` }],
+              parts: [{ type: "text" as const, text: `${eventDesc}\n\n请：\n1. 检查你领域内受影响的代码\n2. 进行必要的适配修改\n3. 运行测试验证\n4. 通过 hive_emit 报告完成情况` }],
             },
           })
 
