@@ -1,7 +1,9 @@
 import type { Plugin, Hooks } from "sjz-opencode-sdk"
 import { existsSync, readdirSync, statSync, readFileSync } from "fs"
 import { join } from "path"
+import { execSync } from "child_process"
 
+const SUPERPOWERS_GITHUB = "https://github.com/obra/superpowers"
 const GLOBAL_SUPERPOWERS_DIR = join(process.env.HOME || "", ".superpowers")
 
 const loadFileContent = (filePath: string): string | null => {
@@ -91,12 +93,23 @@ const loadAgents = (): AgentEntry[] => {
   }
 }
 
+const cloneSuperpowers = (): void => {
+  execSync(`git clone "${SUPERPOWERS_GITHUB}" "${GLOBAL_SUPERPOWERS_DIR}"`, {
+    stdio: "ignore",
+    timeout: 120000,
+  })
+}
+
 export const SuperpowerPlugin: Plugin = async ({
   registerSkill,
   registerCommand,
 }: any): Promise<Hooks> => {
   if (!existsSync(GLOBAL_SUPERPOWERS_DIR)) {
-    return {}
+    try {
+      cloneSuperpowers()
+    } catch (e) {
+      return {}
+    }
   }
 
   const agents = loadAgents()
