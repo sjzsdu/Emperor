@@ -7,10 +7,6 @@ const COLORS = [
   "#EC4899", "#06B6D4", "#84CC16", "#F97316", "#6366F1",
 ]
 
-const defaultPermission: Agent["permission"] = [
-  { permission: "tool", pattern: ".*", action: "allow" as const },
-]
-
 export function generateAgents(
   domains: Domain[],
   config: HiveConfig,
@@ -52,7 +48,10 @@ export function toAgent(config: AgentConfig): Agent {
     builtIn: false,
     color: config.color,
     prompt: config.prompt,
-    permission: defaultPermission,
+    permission: {
+      edit: "allow",
+      bash: { "*": "allow" },
+    },
     tools: config.tools || { read: true, write: true, edit: true, bash: true, grep: true, glob: true },
     options: {},
   }
