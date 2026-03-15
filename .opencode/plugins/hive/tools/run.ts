@@ -8,8 +8,11 @@ export function createRunTool(pipeline: HivePipeline) {
     args: {
       requirement: z.string().describe("用户的完整需求描述"),
     },
-    async execute(args) {
-      return pipeline.run(args.requirement)
+    async execute(args, context) {
+      return pipeline.start(args.requirement, {
+        parentSessionId: context.sessionID,
+        directory: context.directory,
+      })
     },
   })
 }

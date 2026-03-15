@@ -1,11 +1,18 @@
 import type { OpencodeClient } from "sjz-opencode-sdk"
 import type { Part } from "sjz-opencode-sdk"
 import type { HiveEventBus } from "./eventbus/bus"
-import type { Domain, HiveConfig, PipelineState, PipelineLog, PipelinePhase } from "./types"
+import type { Domain, HiveConfig, PipelineState, PipelineLog, PipelinePhase, PipelineSession } from "./types"
 
 // Hive pipeline engine
+export interface PipelineContext {
+  parentSessionId?: string
+  directory?: string
+  onProgress?: (message: string) => void
+}
+
 export class HivePipeline {
   private currentPipeline: PipelineState | null = null
+  private runningPromise: Promise<string> | null = null
 
   constructor(
     private eventBus: HiveEventBus,
@@ -19,6 +26,32 @@ export class HivePipeline {
     return this.currentPipeline
   }
 
+  isRunning(): boolean {
+    return this.currentPipeline?.status === "running"
+  }
+
+  async start(requirement: string, context?: PipelineContext): Promise<string> {
+    if (this.isRunning()) {
+      return "Pipeline 已在运行中，请用 hive_status detail:pipeline 查看进度。"
+    }
+    this.runningPromise = this.run(requirement, context)
+    this.runningPromise.catch(() => {})
+
+    const sessionList = this.currentPipeline?.sessions ?? []
+    const lines = [
+      `# 🚀 Hive Pipeline 已启动`,
+      ``,
+      `**需求**: ${requirement}`,
+      `**域数量**: ${this.domains.length}`,
+      ``,
+      `Pipeline 正在后台运行。`,
+      `- 用 **hive_status detail:pipeline** 查看实时进度`,
+      `- 用 **hive_status detail:pipeline** 获取最终报告`,
+      `- 各域 Session 已创建，可在 TUI Session 列表中查看`,
+    ]
+    return lines.join("\n")
+  }
+
   // Helpers
   private log(phase: PipelinePhase, message: string, domain?: string) {
     if (!this.currentPipeline) return
@@ -29,6 +62,11 @@ export class HivePipeline {
       target: "*",
       payload: { message, data: { phase, domain } },
     })
+  }
+
+  private trackSession(sessionId: string, domain: string, phase: PipelinePhase, title: string) {
+    if (!this.currentPipeline) return
+    this.currentPipeline.sessions.push({ sessionId, domain, phase, title })
   }
 
   private extractText(parts: Part[]): string {
@@ -70,8 +108,11 @@ export class HivePipeline {
     return { relevance, analysis, workload }
   }
 
-  async run(requirement: string): Promise<string> {
-    // initialize pipeline state
+  async run(requirement: string, context?: PipelineContext): Promise<string> {
+    const parentSessionId = context?.parentSessionId
+    const directory = context?.directory
+    const progress = context?.onProgress ?? (() => {})
+
     const id = `pipeline-${Date.now()}`
     const startedAt = Date.now()
     this.currentPipeline = {
@@ -80,11 +121,37 @@ export class HivePipeline {
       status: "running",
       startedAt,
       logs: [],
+      sessions: [],
       assessments: [],
       dispatched: [],
     }
 
-    // announce start
+    try {
+    return await this._execute(requirement, parentSessionId, directory, progress, startedAt)
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err)
+      this.currentPipeline!.status = "failed"
+      this.currentPipeline!.completedAt = Date.now()
+      this.log("complete", `❌ Pipeline 崩溃: ${errMsg}`)
+      this.eventBus.publish({
+        type: "pipeline_failed",
+        source: "queen",
+        target: "*",
+        payload: { message: `Pipeline failed: ${errMsg}` },
+      })
+      this.runningPromise = null
+      return `# ❌ Hive Pipeline Failed\n\n${errMsg}`
+    }
+  }
+
+  private async _execute(
+    requirement: string,
+    parentSessionId: string | undefined,
+    directory: string | undefined,
+    progress: (message: string) => void,
+    startedAt: number,
+  ): Promise<string> {
+
     this.eventBus.publish({
       type: "pipeline_started",
       source: "queen",
@@ -93,12 +160,18 @@ export class HivePipeline {
     })
 
     // Phase 1: Assess (parallel)
+    progress(`🔍 评估中... (0/${this.domains.length})`)
     this.log("assess", `🔍 开始评估 ${this.domains.length} 个域...`)
     const assessResults = await Promise.allSettled(
       this.domains.map(async (domain) => {
-        const session = await this.client.session.create({ body: { title: `Hive·${domain.name}·评估` } })
+        const assessTitle = `Hive·${domain.name}·评估`
+        const session = await this.client.session.create({
+          body: { title: assessTitle, parentID: parentSessionId },
+          query: { directory },
+        })
         const sessionId = session.data!.id
         this.sessionToDomain.set(sessionId, domain.id)
+        this.trackSession(sessionId, domain.id, "assess", assessTitle)
         const prompt = [
           `以下是一个新的需求，请评估是否与你的领域相关，以及你需要做什么：`,
           ``,
@@ -118,6 +191,8 @@ export class HivePipeline {
         const text = this.extractText(resp.data?.parts ?? [])
         const { relevance, analysis, workload } = this.parseRelevance(text)
         this.currentPipeline!.assessments.push({ domain: domain.id, relevance, analysis, workload })
+        const done = this.currentPipeline!.assessments.length
+        progress(`🔍 评估中... (${done}/${this.domains.length})`)
         this.log("assess", `✅ @${domain.id} 评估完成: ${relevance}相关`, domain.id)
         return { domain: domain.id, relevance, analysis, workload }
       }),
@@ -163,16 +238,19 @@ export class HivePipeline {
     const negotiations = new Map<string, { depender: string; provider: string; request: string; response: string }>()
 
     if (depPairs.length > 0) {
+      progress(`🤝 协商中... (0/${depPairs.length})`)
       this.log("negotiate", `🤝 开始协商 ${depPairs.length} 对域间接口...`)
       for (const pair of depPairs) {
         const dependerAssessment = assessmentMap.get(pair.depender)!
         const providerAssessment = assessmentMap.get(pair.provider)!
         try {
-          // Step 1: Ask depender what it needs from provider
+          const reqTitle = `Hive·${pair.depender}·协商·需求方`
           const reqSession = await this.client.session.create({
-            body: { title: `Hive·${pair.depender}·协商·需求方` },
+            body: { title: reqTitle, parentID: parentSessionId },
+            query: { directory },
           })
           this.sessionToDomain.set(reqSession.data!.id, pair.depender)
+          this.trackSession(reqSession.data!.id, pair.depender, "negotiate", reqTitle)
           const reqResp = await this.client.session.prompt({
             path: { id: reqSession.data!.id },
             body: {
@@ -202,10 +280,13 @@ export class HivePipeline {
           const requestText = this.extractText(reqResp.data?.parts ?? [])
 
           // Step 2: Ask provider to confirm what it will provide
+          const provTitle = `Hive·${pair.provider}·协商·提供方`
           const provSession = await this.client.session.create({
-            body: { title: `Hive·${pair.provider}·协商·提供方` },
+            body: { title: provTitle, parentID: parentSessionId },
+            query: { directory },
           })
           this.sessionToDomain.set(provSession.data!.id, pair.provider)
+          this.trackSession(provSession.data!.id, pair.provider, "negotiate", provTitle)
           const provResp = await this.client.session.prompt({
             path: { id: provSession.data!.id },
             body: {
@@ -250,6 +331,7 @@ export class HivePipeline {
             target: pair.depender,
             payload: { message: responseText.substring(0, 500) },
           })
+          progress(`🤝 协商中... (${negotiations.size}/${depPairs.length})`)
           this.log("negotiate", `✅ ${pair.depender} ↔ ${pair.provider} 协商完成`, pair.depender)
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err)
@@ -350,6 +432,7 @@ export class HivePipeline {
     }
 
     // Execute waves sequentially, domains within wave in parallel
+    progress(`🚀 执行中... (0/${relevantDomains.length})`)
     this.log("dispatch", `🚀 开始执行 ${waves.length} 个波次...`)
     for (let waveIdx = 0; waveIdx < waves.length; waveIdx++) {
       const wave = waves[waveIdx]
@@ -358,10 +441,15 @@ export class HivePipeline {
       const waveResults = await Promise.allSettled(
         wave.map(async (domainId) => {
           const domain = this.domains.find((d) => d.id === domainId)!
-          this.currentPipeline!.dispatched.push({ domain: domainId, status: "running" })
-          const session = await this.client.session.create({ body: { title: `Hive·${domain.name}·执行` } })
+          const execTitle = `Hive·${domain.name}·执行`
+          const session = await this.client.session.create({
+            body: { title: execTitle, parentID: parentSessionId },
+            query: { directory },
+          })
           const sessionId = session.data!.id
           this.sessionToDomain.set(sessionId, domainId)
+          this.trackSession(sessionId, domainId, "dispatch", execTitle)
+          this.currentPipeline!.dispatched.push({ domain: domainId, status: "running", sessionId })
           const instruction = buildInstruction(domainId)
           const resp = await this.client.session.prompt({
             path: { id: sessionId },
@@ -379,6 +467,8 @@ export class HivePipeline {
             entry.status = "completed"
             entry.response = text
           }
+          const dispatched = this.currentPipeline!.dispatched.filter((d) => d.status === "completed" || d.status === "failed").length
+          progress(`🚀 执行中... (${dispatched}/${relevantDomains.length}) ✅ @${domainId}`)
           this.log("dispatch", `✅ @${domainId} 执行完成`, domainId)
         } else {
           const errMsg = result.reason instanceof Error ? result.reason.message : String(result.reason)
@@ -396,6 +486,7 @@ export class HivePipeline {
     }
 
     // Phase 5: Report
+    progress(`📋 生成报告...`)
     const end = Date.now()
     const duration = (end - startedAt) / 1000
     this.currentPipeline!.status = "completed"
@@ -406,12 +497,27 @@ export class HivePipeline {
 
     const perDomainLines = this.currentPipeline!.dispatched.map((d) => {
       const icon = d.status === "completed" ? "✅" : "❌"
-      return `### ${icon} @${d.domain}\n${d.response?.substring(0, 300) ?? "无输出"}`
+      const sessionRef = d.sessionId ? `\n  Session: \`${d.sessionId}\`` : ""
+      return `### ${icon} @${d.domain}${sessionRef}\n${d.response?.substring(0, 300) ?? "无输出"}`
     })
 
     const negotiationLines = [...negotiations.values()].map(
       (n) => `- **${n.depender} → ${n.provider}**: ${n.response.substring(0, 100)}`,
     )
+
+    const sessionsByPhase = {
+      assess: this.currentPipeline!.sessions.filter((s) => s.phase === "assess"),
+      negotiate: this.currentPipeline!.sessions.filter((s) => s.phase === "negotiate"),
+      dispatch: this.currentPipeline!.sessions.filter((s) => s.phase === "dispatch"),
+    }
+    const sessionLines: string[] = []
+    for (const [phase, sessions] of Object.entries(sessionsByPhase)) {
+      if (sessions.length === 0) continue
+      sessionLines.push(
+        `**${phase}**`,
+        ...sessions.map((s) => `- @${s.domain}: \`${s.sessionId}\` (${s.title})`),
+      )
+    }
 
     const report = [
       `# Hive Pipeline Report`,
@@ -420,11 +526,15 @@ export class HivePipeline {
       `- **相关域**: ${relevantDomains.length} (${relevantDomains.join(", ")})`,
       `- **成功**: ${succeeded.length}/${this.currentPipeline!.dispatched.length}`,
       `- **耗时**: ${duration.toFixed(1)}s`,
+      `- **创建 Sessions**: ${this.currentPipeline!.sessions.length}`,
       ``,
       negotiationLines.length > 0 ? `## 接口协商\n${negotiationLines.join("\n")}` : "",
       ``,
       `## 执行结果`,
       ...perDomainLines,
+      ``,
+      `## Sessions（可在 TUI 中切换查看详情）`,
+      ...sessionLines,
     ].filter(Boolean).join("\n\n")
 
     this.eventBus.publish({
@@ -434,6 +544,7 @@ export class HivePipeline {
       payload: { message: `Pipeline completed: ${succeeded.length}/${this.currentPipeline!.dispatched.length} succeeded`, data: { requirement, domains: relevantDomains } },
     })
     this.eventBus.cleanup()
+    this.runningPromise = null
     return report
   }
 }

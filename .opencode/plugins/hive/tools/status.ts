@@ -17,9 +17,9 @@ export function createStatusTool(
     async execute(args) {
       if (args.detail === "pipeline") {
         const state = pipeline.getState()
-        if (!state) return "# 📊 Pipeline\n\n当前没有运行中或已完成的流水线。"
+        if (!state) return "# 📊 Pipeline\n\n当前没有运行中或已完成的流水线。请先调用 hive_run 启动。"
 
-        const statusIcon = state.status === "running" ? "🔄" : state.status === "completed" ? "✅" : "❌"
+        const statusIcon = state.status === "running" ? "🔄 运行中" : state.status === "completed" ? "✅ 已完成" : "❌ 失败"
         const duration = ((state.completedAt || Date.now()) - state.startedAt) / 1000
 
         const logLines = state.logs.map(l => {
@@ -34,14 +34,21 @@ export function createStatusTool(
 
         const dispatchLines = state.dispatched.map(d => {
           const icon = d.status === "completed" ? "✅" : d.status === "failed" ? "❌" : d.status === "running" ? "🔄" : "⏳"
-          return `- ${icon} @${d.domain}: ${d.status}`
+          const sid = d.sessionId ? ` (\`${d.sessionId}\`)` : ""
+          return `- ${icon} @${d.domain}: ${d.status}${sid}`
         })
+
+        const sessionLines = state.sessions.map(s =>
+          `- [${s.phase}] @${s.domain}: \`${s.sessionId}\` — ${s.title}`
+        )
 
         return `# 📊 Pipeline ${statusIcon}\n\n` +
           `**需求**: ${state.requirement}\n` +
-          `**状态**: ${state.status} | **耗时**: ${duration.toFixed(1)}s\n\n` +
+          `**状态**: ${state.status} | **耗时**: ${duration.toFixed(1)}s\n` +
+          `**Sessions**: ${state.sessions.length}\n\n` +
           `## 评估结果\n${assessLines.join("\n") || "无"}\n\n` +
           `## 执行状态\n${dispatchLines.join("\n") || "无"}\n\n` +
+          `## 所有 Sessions\n${sessionLines.join("\n") || "无"}\n\n` +
           `## 执行日志\n\`\`\`\n${logLines.join("\n")}\n\`\`\``
       }
 

@@ -84,17 +84,21 @@ ${buildDependencyGraph(domains as any)}
 
 ### 收到需求时
 1. 如有不清楚的地方，用 question 工具向用户确认
-2. 需求明确后，直接调用 **hive_run** 工具，它会自动完成：评估→筛选→协商→派发→汇总
-3. 将 hive_run 的执行报告解读给用户
+2. 需求明确后，调用 **hive_run** 启动流水线（它会立即返回，在后台运行）
+3. 每隔一段时间调用 **hive_status detail:pipeline** 查看进度
+4. Pipeline 完成后（状态变为 completed 或 failed），将结果解读给用户
+
+### 重要：hive_run 是异步的
+- hive_run 立即返回，Pipeline 在后台执行
+- **必须用 hive_status detail:pipeline 轮询进度**，直到 status 为 completed 或 failed
+- 不要假设 hive_run 返回后任务就完成了
 
 ### 后续跟进
-- 用 hive_status 查看执行进度和历史
 - 用 hive_dispatch 对个别域追加任务
 - 用 hive_negotiate 协调特定域的接口问题
 
 ## 禁止事项
 - ❌ 不要自己写代码 — 你是协调者
 - ❌ 不要跳过 hive_run 手动编排流程
-
-备注：Use individual tools (hive_broadcast, hive_dispatch, hive_negotiate) only for targeted follow-up actions`;
+- ❌ hive_run 返回后不要直接给用户报告完成 — 必须用 hive_status 确认完成`;
 }

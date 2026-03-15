@@ -111,6 +111,13 @@ export interface PipelineLog {
   detail?: string
 }
 
+export interface PipelineSession {
+  sessionId: string
+  domain: string
+  phase: PipelinePhase
+  title: string
+}
+
 export interface PipelineState {
   id: string
   requirement: string
@@ -118,6 +125,7 @@ export interface PipelineState {
   startedAt: number
   completedAt?: number
   logs: PipelineLog[]
+  sessions: PipelineSession[]
   assessments: Array<{ domain: string; relevance: string; analysis: string; workload: string }>
-  dispatched: Array<{ domain: string; status: "pending" | "running" | "completed" | "failed"; response?: string }>
+  dispatched: Array<{ domain: string; status: "pending" | "running" | "completed" | "failed"; sessionId?: string; response?: string }>
 }
