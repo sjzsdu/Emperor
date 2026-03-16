@@ -46,6 +46,8 @@ export interface Edict {
   memorial?: string
   projectContext?: string
   executionContext?: ExecutionContext
+  // Optional: track pipeline sessions associated with this edict
+  sessions?: PipelineSession[]
 }
 
 export interface Plan {
@@ -99,6 +101,21 @@ export interface ExecutionContext {
   securityAuditResult?: string
   /** 工部 CI/CD update result (post-pass) */
   cicdResult?: string
+  /** Pipeline tracking context */
+  pipelineSessionId?: string
+  pipelineDirectory?: string
+}
+
+/** Phase identifiers for pipeline tracking */
+export type PipelinePhase = "reconnaissance" | "planning" | "reviewing" | "dispatching" | "executing" | "post-verification" | "memorial"
+
+/** Tracks a session created during pipeline execution */
+export interface PipelineSession {
+  sessionId: string
+  phase: PipelinePhase
+  department?: string
+  title: string
+  createdAt: number
 }
 
 export interface EdictStore {

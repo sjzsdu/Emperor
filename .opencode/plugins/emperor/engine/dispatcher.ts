@@ -1,6 +1,7 @@
 import type { OpencodeClient } from "@opencode-ai/sdk"
 import type { Part } from "@opencode-ai/sdk"
 import type { DepartmentId, Edict, Execution, Plan, Subtask } from "../types"
+import { extractText } from "../utils"
 
 const DEPT_NAMES: Record<DepartmentId, string> = {
   bingbu: "兵部",
@@ -11,12 +12,7 @@ const DEPT_NAMES: Record<DepartmentId, string> = {
   libu: "吏部",
 }
 
-function extractText(parts: Part[]): string {
-  return parts
-    .filter((p): p is Extract<Part, { type: "text" }> => p.type === "text")
-    .map((p) => p.text)
-    .join("\n")
-}
+// extractText is now shared via ../utils
 
 /**
  * Group subtasks into execution waves based on dependencies (Kahn's algorithm).
@@ -57,6 +53,7 @@ export async function executeSubtask(
   edict: Edict,
   subtask: Subtask,
   maxRetries: number = 0,
+  sessionContext?: { parentSessionId?: string; directory?: string },
 ): Promise<Execution> {
   const deptName = DEPT_NAMES[subtask.department] ?? subtask.department
   const execution: Execution = {
@@ -68,11 +65,21 @@ export async function executeSubtask(
     startedAt: Date.now(),
   }
 
-  // Create session once — reused across retries
+  // Create/associate a session for this subtask
   const session = await client.session.create({
-    body: { title: `${deptName}·${subtask.title}` },
+    body: { title: `${deptName}·${subtask.title}`, ...(sessionContext?.parentSessionId ? { parentID: sessionContext.parentSessionId } : {}) },
+    ...(sessionContext?.directory ? { query: { directory: sessionContext.directory } } : {}),
   })
   execution.sessionId = session.data!.id
+  // Track session under edict for pipeline progress
+  if (!edict.sessions) edict.sessions = []
+  edict.sessions.push({
+    sessionId: execution.sessionId,
+    phase: "executing" as const,
+    department: subtask.department,
+    title: `${deptName}·${subtask.title}`,
+    createdAt: Date.now(),
+  })
 
   // Toast: department started
   client.tui.showToast({
@@ -177,6 +184,7 @@ export async function dispatchAndExecute(
   edict: Edict,
   plan: Plan,
   maxRetries: number = 0,
+  sessionContext?: { parentSessionId?: string; directory?: string },
 ): Promise<Execution[]> {
   const waves = topologicalSort(plan.subtasks)
   const allExecutions: Execution[] = []
@@ -196,16 +204,28 @@ export async function dispatchAndExecute(
       },
     })
 
-    const waveResults = await Promise.all(
-      wave.map((subtask) => executeSubtask(client, edict, subtask, maxRetries)),
+    const settled = await Promise.allSettled(
+      wave.map((subtask) => executeSubtask(client, edict, subtask, maxRetries, sessionContext)),
     )
+    const waveExecutions: Execution[] = settled.map((result, idx) => {
+      if (result.status === "fulfilled") return result.value
+      const subtask = wave[idx]
+      return {
+        department: subtask.department,
+        subtaskIndex: subtask.index,
+        sessionId: "",
+        status: "failed" as const,
+        error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+        retryCount: 0,
+        startedAt: Date.now(),
+        completedAt: Date.now(),
+      }
+    })
 
-    // Count results for this wave
-    const waveCompleted = waveResults.filter((e) => e.status === "completed").length
-    const waveFailed = waveResults.filter((e) => e.status === "failed").length
-    completedCount += waveResults.length
+    const waveCompleted = waveExecutions.filter((e) => e.status === "completed").length
+    const waveFailed = waveExecutions.filter((e) => e.status === "failed").length
+    completedCount += waveExecutions.length
 
-    // Toast: wave complete
     if (waveFailed > 0) {
       client.tui.showToast({
         body: {
@@ -222,7 +242,7 @@ export async function dispatchAndExecute(
       })
     }
 
-    allExecutions.push(...waveResults)
+    allExecutions.push(...waveExecutions)
   }
 
   return allExecutions

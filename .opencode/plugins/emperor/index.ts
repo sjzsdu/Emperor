@@ -6,6 +6,7 @@ import { createMemorialTool } from "./tools/memorial"
 import { createHaltTool } from "./tools/halt"
 import { createTaiziReconTool, createZhongshuReconTool, createMenxiaReconTool, createLibuReconTool, createBingbuReconTool, createHubuReconTool, createXingbuReconTool, createGongbuReconTool } from "./tools/recon"
 import { createSubmitPlanTool, createRejectPlanTool, createApprovePlanTool } from "./tools/workflow"
+import { createEdictStatusTool } from "./tools/status"
 import { createAssignArchitectureTool, createAssignImplementationTool, createAssignTestingTool, createAssignFixTool, createAssignDocumentationTool, createAssignSecurityAuditTool, createAssignCicdTool, createSubmitMemorialTool } from "./tools/dispatch"
 
 export const EmperorPlugin: Plugin = async ({ client, directory }) => {
@@ -53,6 +54,8 @@ export const EmperorPlugin: Plugin = async ({ client, directory }) => {
       "assign_cicd": createAssignCicdTool(client, store),
       // === 尚书省呈奏工具 ===
       "submit_memorial": createSubmitMemorialTool(client, store),
+      // === Edict status ===
+      "edict_status": createEdictStatusTool(store),
     },
   }
 }

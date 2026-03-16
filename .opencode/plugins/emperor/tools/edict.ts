@@ -19,10 +19,25 @@ export function createEdictTool(client: OpencodeClient, store: EdictStore, confi
         status: "received",
       })
 
+      // Create a pipeline parent session to track the overall edict execution context
+      const parentSession = await client.session.create({
+        body: { title: `三省六部·${args.title}` },
+        // Directory context for the pipeline sessions
+        query: { directory },
+      })
+      const parentSessionId = parentSession.data?.id ?? ""
+      // Persist pipeline context in edict so downstream stages can continue the lineage
+      store.update(edict.id, {
+        executionContext: {
+          pipelineSessionId: parentSessionId,
+          pipelineDirectory: directory,
+        },
+      })
+
       context.metadata({ title: `下旨：${args.title}` })
 
       try {
-        const memorial = await runPipeline(edict, context, client, store, config, directory)
+        const memorial = await runPipeline(edict, context, client, store, config, directory, parentSessionId)
         return memorial
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)

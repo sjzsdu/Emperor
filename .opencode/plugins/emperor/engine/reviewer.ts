@@ -1,6 +1,7 @@
 import type { OpencodeClient } from "@opencode-ai/sdk"
 import type { Part } from "@opencode-ai/sdk"
 import type { DepartmentId, Edict, Plan, Review } from "../types"
+import { extractText, parseJSON } from "../utils"
 
 const regexCache = new Map<string, RegExp>()
 
@@ -16,35 +17,7 @@ function getRegex(pattern: string): RegExp | null {
   }
 }
 
-function extractText(parts: Part[]): string {
-  return parts
-    .filter((p): p is Extract<Part, { type: "text" }> => p.type === "text")
-    .map((p) => p.text)
-    .join("\n")
-}
-
-function parseJSON(text: string): unknown {
-  // Try direct parse
-  try {
-    return JSON.parse(text)
-  } catch {}
-  // Try extracting from markdown code block
-  const codeBlockMatch = text.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/)
-  if (codeBlockMatch) {
-    try {
-      return JSON.parse(codeBlockMatch[1])
-    } catch {}
-  }
-  // Try finding first { to last }
-  const first = text.indexOf("{")
-  const last = text.lastIndexOf("}")
-  if (first !== -1 && last > first) {
-    try {
-      return JSON.parse(text.slice(first, last + 1))
-    } catch {}
-  }
-  return null
-}
+// Shared utils used for parsing plan results
 
 function parseReview(text: string): Review {
   const data = parseJSON(text)
@@ -117,6 +90,7 @@ export async function reviewWithMenxia(
   sensitivePatterns: string[],
   mandatoryDepartments: DepartmentId[] = [],
   projectContext?: string,
+  sessionContext?: { parentSessionId?: string; directory?: string },
 ): Promise<Review> {
   // Pre-check: mandatory department enforcement (code-level, before AI review)
   const missingDepts = checkMandatoryDepartments(plan, mandatoryDepartments)
@@ -141,7 +115,8 @@ export async function reviewWithMenxia(
 
   // Create session for menxia
   const session = await client.session.create({
-    body: { title: `门下省·审核·${edict.title}` },
+    body: { title: `门下省·审核·${edict.title}`, ...(sessionContext?.parentSessionId ? { parentID: sessionContext.parentSessionId } : {}) },
+    ...(sessionContext?.directory ? { query: { directory: sessionContext.directory } } : {}),
   })
   const sessionId = session.data!.id
 

@@ -2,9 +2,11 @@ import type { OpencodeClient } from "@opencode-ai/sdk"
 import type { Part } from "@opencode-ai/sdk"
 import type { ToolContext } from "@opencode-ai/plugin"
 import type { Edict, EdictStore, EmperorConfig, Execution, Plan } from "../types"
+import type { PipelineSession } from "../types"
 import { reviewWithMenxia } from "./reviewer"
 import { dispatchAndExecute, executeSubtask } from "./dispatcher"
 import { reconWithJinyiwei } from "./recon"
+import { extractText, parseJSON } from "../utils"
 
 const DEPT_DISPLAY: Record<string, string> = {
   bingbu: "兵部",
@@ -15,32 +17,7 @@ const DEPT_DISPLAY: Record<string, string> = {
   libu: "吏部",
 }
 
-function extractText(parts: Part[]): string {
-  return parts
-    .filter((p): p is Extract<Part, { type: "text" }> => p.type === "text")
-    .map((p) => p.text)
-    .join("\n")
-}
-
-function parseJSON(text: string): unknown {
-  try {
-    return JSON.parse(text)
-  } catch {}
-  const codeBlockMatch = text.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/)
-  if (codeBlockMatch) {
-    try {
-      return JSON.parse(codeBlockMatch[1])
-    } catch {}
-  }
-  const first = text.indexOf("{")
-  const last = text.lastIndexOf("}")
-  if (first !== -1 && last > first) {
-    try {
-      return JSON.parse(text.slice(first, last + 1))
-    } catch {}
-  }
-  return null
-}
+// Shared utility functions extracted to utils.ts
 
 function parsePlan(text: string, attempt: number): Plan {
   const data = parseJSON(text)
@@ -66,9 +43,11 @@ export async function planWithZhongshu(
   attempt: number,
   rejectionReasons?: string[],
   projectContext?: string,
+  sessionContext?: { parentSessionId?: string; directory?: string },
 ): Promise<Plan> {
   const session = await client.session.create({
-    body: { title: `中书省·${edict.title}` },
+    body: { title: `中书省·${edict.title}`, ...(sessionContext?.parentSessionId ? { parentID: sessionContext.parentSessionId } : {}) },
+    ...(sessionContext?.directory ? { query: { directory: sessionContext.directory } } : {}),
   })
   const sessionId = session.data!.id
 
@@ -143,12 +122,16 @@ export async function shangshuCoordinate(
   edict: Edict,
   plan: Plan,
   config: EmperorConfig,
-): Promise<{ executions: Execution[]; memorial: string }> {
+  sessionContext?: { parentSessionId?: string; directory?: string },
+): Promise<{ executions: Execution[]; memorial: string; sessions: PipelineSession[] }> {
   // Create shangshu session — persistent across both turns
   const session = await client.session.create({
-    body: { title: `尚书省·${edict.title}` },
+    body: { title: `尚书省·${edict.title}`, ...(sessionContext?.parentSessionId ? { parentID: sessionContext.parentSessionId } : {}) },
+    ...(sessionContext?.directory ? { query: { directory: sessionContext.directory } } : {}),
   })
   const shangshuSessionId = session.data!.id
+  let sessions: PipelineSession[] = []
+  sessions.push({ sessionId: shangshuSessionId, phase: "dispatching" as const, title: `尚书省·${edict.title}`, createdAt: Date.now() })
 
   // --- Turn 1: Pre-dispatch — shangshu reviews execution strategy ---
   const preDispatchPrompt = `门下省已准奏以下规划方案，请审视执行策略。
@@ -179,7 +162,13 @@ ${JSON.stringify(plan, null, 2)}
   // --- Code-based dispatch: topological sort + parallel execution ---
   // This is shangshu's "下达" to the six departments, implemented efficiently via code
   client.tui.showToast({ body: { message: "⚔️ 尚书省调度六部执行中...", variant: "info" } })
-  const executions = await dispatchAndExecute(client, edict, plan, config.pipeline.maxSubtaskRetries)
+  const executions = await dispatchAndExecute(
+    client,
+    edict,
+    plan,
+    config.pipeline.maxSubtaskRetries,
+    sessionContext,
+  )
 
   // --- Post-execution verification (if enabled) ---
   if (config.pipeline.requirePostVerification) {
@@ -193,7 +182,7 @@ ${JSON.stringify(plan, null, 2)}
       dependencies: [],
       effort: "medium" as const,
     }
-    const verification = await executeSubtask(client, edict, verificationSubtask, 0)
+    const verification = await executeSubtask(client, edict, verificationSubtask, 0, sessionContext)
     executions.push(verification)
   }
 
@@ -269,7 +258,7 @@ ${failedExecs.length > 0 ? "4. **失败分析与建议** — 失败原因分析�
     memorial = formatMemorial(edict, plan, executions)
   }
 
-  return { executions, memorial }
+  return { executions, memorial, sessions }
 }
 
 /** Build a description for post-execution verification */
@@ -326,7 +315,9 @@ export async function runPipeline(
   store: EdictStore,
   config: EmperorConfig,
   directory: string,
+  parentSessionId?: string,
 ): Promise<string> {
+  const sessionContext = { parentSessionId, directory } as const
   let plan: Plan | undefined
   let rejectionReasons: string[] | undefined
 
@@ -351,7 +342,7 @@ export async function runPipeline(
     client.tui.showToast({ body: { message: `📜 中书省规划中...（第 ${attempt} 次）`, variant: "info" } })
 
     try {
-      plan = await planWithZhongshu(client, edict, attempt, rejectionReasons, recon.fullContext || undefined)
+      plan = await planWithZhongshu(client, edict, attempt, rejectionReasons, recon.fullContext || undefined, sessionContext)
     } catch (err) {
       if (attempt === maxAttempts) {
         store.update(edict.id, { status: "failed" })
@@ -372,6 +363,7 @@ export async function runPipeline(
       config.pipeline.sensitivePatterns,
       config.pipeline.mandatoryDepartments,
       recon.summary || undefined,
+      sessionContext,
     )
     store.update(edict.id, { review })
 
@@ -423,8 +415,14 @@ export async function runPipeline(
   client.tui.showToast({ body: { message: "📋 尚书省接旨调度...", variant: "info" } })
 
   store.update(edict.id, { status: "executing" })
-  const { executions, memorial } = await shangshuCoordinate(client, edict, plan, config)
+  const { executions, memorial, sessions } = await shangshuCoordinate(client, edict, plan, config, sessionContext)
   store.update(edict.id, { executions, memorial, status: "completed" })
+  // Persist pipeline sessions to edict state
+  if (sessions && sessions.length > 0) {
+    const current = store.get(edict.id)
+    const existingSessions = current?.sessions ?? []
+    store.update(edict.id, { sessions: [...existingSessions, ...sessions] })
+  }
 
   client.tui.showToast({ body: { message: "📋 奏折已归档", variant: "success" } })
 

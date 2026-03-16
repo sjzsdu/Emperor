@@ -3,12 +3,7 @@ import type { OpencodeClient } from "@opencode-ai/sdk"
 import type { Part } from "@opencode-ai/sdk"
 import type { EdictStore, ExecutionContext } from "../types"
 
-function extractText(parts: Part[]): string {
-  return parts
-    .filter((p): p is Extract<Part, { type: "text" }> => p.type === "text")
-    .map((p) => p.text)
-    .join("\n")
-}
+import { extractText } from "../utils"
 
 /**
  * Invoke a department agent with a prompt, returning the text result.
@@ -19,9 +14,11 @@ async function invokeDepartment(
   agent: string,
   sessionTitle: string,
   prompt: string,
+  sessionContext?: { parentSessionId?: string; directory?: string },
 ): Promise<string> {
   const session = await client.session.create({
-    body: { title: sessionTitle },
+    body: { title: sessionTitle, ...(sessionContext?.parentSessionId ? { parentID: sessionContext.parentSessionId } : {}) },
+    ...(sessionContext?.directory ? { query: { directory: sessionContext.directory } } : {}),
   })
   const response = await client.session.prompt({
     path: { id: session.data!.id },
@@ -77,7 +74,8 @@ ${contextBlock}
 
 请使用 libu_recon 获取上下文后再开始工作。完成后将架构设计结果详细报告给尚书省。`
 
-      const result = await invokeDepartment(client, "libu", `吏部·架构设计·${edict.title}`, prompt)
+      const ctx1 = edict.executionContext?.pipelineSessionId ? { parentSessionId: edict.executionContext.pipelineSessionId } : undefined
+      const result = await invokeDepartment(client, "libu", `吏部·架构设计·${edict.title}`, prompt, ctx1)
 
       // Store architecture result in execution context
       const ctx: ExecutionContext = edict.executionContext ?? {}
@@ -138,7 +136,8 @@ ${args.task_description}
 
 请使用 bingbu_recon 获取上下文后再开始编码。完成后将编码结果详细报告给尚书省，包括修改的文件、核心逻辑、变更说明。`
 
-      const result = await invokeDepartment(client, "bingbu", `兵部·编码实现·${edict.title}`, prompt)
+      const ctx2 = edict.executionContext?.pipelineSessionId ? { parentSessionId: edict.executionContext.pipelineSessionId } : undefined
+      const result = await invokeDepartment(client, "bingbu", `兵部·编码实现·${edict.title}`, prompt, ctx2)
 
       // Store implementation result
       const ctx: ExecutionContext = edict.executionContext ?? {}
@@ -209,7 +208,8 @@ ${implInfo}
 
 请使用 hubu_recon 获取上下文后再开始测试。`
 
-      const result = await invokeDepartment(client, "hubu", `户部·测试验证·${edict.title}·第${attempt}轮`, prompt)
+      const ctx3 = edict.executionContext?.pipelineSessionId ? { parentSessionId: edict.executionContext.pipelineSessionId } : undefined
+      const result = await invokeDepartment(client, "hubu", `户部·测试验证·${edict.title}·第${attempt}轮`, prompt, ctx3)
 
       // Determine pass/fail from result
       const passed = result.includes("测试通过") && !result.includes("测试失败")

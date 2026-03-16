@@ -4,6 +4,7 @@ import { join } from "node:path"
 import type { OpencodeClient } from "@opencode-ai/sdk"
 import type { Part } from "@opencode-ai/sdk"
 import type { Edict, EmperorConfig, ReconFacetId, ReconManifest } from "../types"
+import { extractText, parseJSON } from "../utils"
 
 // ============================================================
 // Constants
@@ -107,13 +108,7 @@ export interface ReconResult {
 // Utilities
 // ============================================================
 
-function extractText(parts: Part[]): string {
-  return parts
-    .filter((p): p is Extract<Part, { type: "text" }> => p.type === "text")
-    .map((p) => p.text)
-    .join("\n")
-}
-
+// Shared util helpers are available from utils
 /**
  * Read the current git HEAD hash without child_process.
  * Resolves symbolic refs (e.g., "ref: refs/heads/main") to their commit hash.
@@ -477,7 +472,7 @@ async function runFullScan(
       } 
     })
     // Save as a special "full" facet for debugging/fallback
-    facets = { architecture: text } as any
+    facets = { architecture: text } as Partial<Record<ReconFacetId, string>>
     saveFacet(directory, config, "architecture", text)
   }
   // Check for missing facets — request them individually in the same session
@@ -645,6 +640,7 @@ export async function ensureReconFresh(
   client: OpencodeClient,
   config: EmperorConfig,
   directory: string,
+  sessionContext?: { parentSessionId?: string; directory?: string },
 ): Promise<ReconManifest> {
   if (!config.recon.enabled) {
     return { gitHash: "", lastFullScanAt: 0, incrementalCount: 0, facets: {} }
@@ -748,6 +744,7 @@ export async function reconWithJinyiwei(
   edict: Edict,
   config: EmperorConfig,
   directory: string,
+  sessionContext?: { parentSessionId?: string; directory?: string },
 ): Promise<ReconResult> {
   if (!config.recon.enabled) {
     return { fullContext: "", summary: "", gitHash: "", cached: false }
