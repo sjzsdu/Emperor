@@ -3,7 +3,42 @@ import type { Part } from "sjz-opencode-sdk"
 import type { HiveEventBus } from "./eventbus/bus"
 import type { Domain, HiveConfig, PipelineState, PipelineLog, PipelinePhase, PipelineSession } from "./types"
 
-// Hive pipeline engine
+function partitionByConnectedComponents(
+  relevantDomains: string[],
+  domainMap: Map<string, Domain>,
+): string[][] {
+  const parent = new Map<string, string>()
+  const relevantSet = new Set(relevantDomains)
+
+  function find(x: string): string {
+    if (!parent.has(x)) parent.set(x, x)
+    if (parent.get(x) !== x) parent.set(x, find(parent.get(x)!))
+    return parent.get(x)!
+  }
+
+  function union(a: string, b: string) {
+    const ra = find(a), rb = find(b)
+    if (ra !== rb) parent.set(ra, rb)
+  }
+
+  for (const id of relevantDomains) parent.set(id, id)
+  for (const id of relevantDomains) {
+    const domain = domainMap.get(id)
+    if (!domain) continue
+    for (const dep of domain.dependencies) {
+      if (relevantSet.has(dep)) union(id, dep)
+    }
+  }
+
+  const groups = new Map<string, string[]>()
+  for (const id of relevantDomains) {
+    const root = find(id)
+    if (!groups.has(root)) groups.set(root, [])
+    groups.get(root)!.push(id)
+  }
+  return [...groups.values()]
+}
+
 export interface PipelineContext {
   parentSessionId?: string
   directory?: string
@@ -247,10 +282,10 @@ export class HivePipeline {
     if (depPairs.length > 0 && !singleDomain) {
       progress(`🤝 协商中... (0/${depPairs.length})`)
       this.log("negotiate", `🤝 开始协商 ${depPairs.length} 对域间接口...`)
-      for (const pair of depPairs) {
-        const dependerAssessment = assessmentMap.get(pair.depender)!
-        const providerAssessment = assessmentMap.get(pair.provider)!
-        try {
+      const negotiateResults = await Promise.allSettled(
+        depPairs.map(async (pair) => {
+          const dependerAssessment = assessmentMap.get(pair.depender)!
+          const providerAssessment = assessmentMap.get(pair.provider)!
           const reqTitle = `Hive·${pair.depender}·协商·需求方`
           const reqSession = await this.client.session.create({
             body: { title: reqTitle, parentID: parentSessionId },
@@ -286,7 +321,6 @@ export class HivePipeline {
           })
           const requestText = this.extractText(reqResp.data?.parts ?? [])
 
-          // Step 2: Ask provider to confirm what it will provide
           const provTitle = `Hive·${pair.provider}·协商·提供方`
           const provSession = await this.client.session.create({
             body: { title: provTitle, parentID: parentSessionId },
@@ -340,9 +374,12 @@ export class HivePipeline {
           })
           progress(`🤝 协商中... (${negotiations.size}/${depPairs.length})`)
           this.log("negotiate", `✅ ${pair.depender} ↔ ${pair.provider} 协商完成`, pair.depender)
-        } catch (err) {
-          const errMsg = err instanceof Error ? err.message : String(err)
-          this.log("negotiate", `❌ ${pair.depender} ↔ ${pair.provider} 协商失败: ${errMsg}`, pair.depender)
+        }),
+      )
+      for (const result of negotiateResults) {
+        if (result.status === "rejected") {
+          const errMsg = result.reason instanceof Error ? result.reason.message : String(result.reason)
+          this.log("negotiate", `❌ 协商失败: ${errMsg}`)
         }
       }
     } else {
@@ -353,47 +390,7 @@ export class HivePipeline {
       }
     }
 
-    // Phase 4: Dispatch (parallel waves respecting dependencies)
-    const relevantSet = new Set<string>(relevantDomains)
-    const internalDeps = new Map<string, string[]>()
-    this.domains.forEach((d) => {
-      if (!relevantSet.has(d.id)) return
-      internalDeps.set(d.id, d.dependencies.filter((dep) => relevantSet.has(dep)))
-    })
-    const adj = new Map<string, string[]>()
-    this.domains.forEach((d) => {
-      if (!relevantSet.has(d.id)) return
-      adj.set(d.id, [])
-    })
-    this.domains.forEach((d) => {
-      if (!relevantSet.has(d.id)) return
-      d.dependencies.forEach((dep) => {
-        if (relevantSet.has(dep)) {
-          const arr = adj.get(dep) ?? []
-          arr.push(d.id)
-          adj.set(dep, arr)
-        }
-      })
-    })
-    const indegree = new Map<string, number>()
-    relevantDomains.forEach((id) => indegree.set(id, (internalDeps.get(id) ?? []).length))
-    let queueWave = relevantDomains.filter((id) => (internalDeps.get(id) ?? []).length === 0)
-    const waves: string[][] = []
-    while (queueWave.length > 0) {
-      const thisWave = [...queueWave]
-      waves.push(thisWave)
-      const next: string[] = []
-      for (const u of thisWave) {
-        for (const v of adj.get(u) ?? []) {
-          const cnt = (indegree.get(v) ?? 0) - 1
-          indegree.set(v, cnt)
-          if (cnt === 0) next.push(v)
-        }
-      }
-      queueWave = next
-    }
-
-    // Build per-domain instruction
+    // Phase 4: Dispatch (partition-parallel)
     const buildInstruction = (domainId: string): string => {
       const assessment = assessmentMap.get(domainId)
       const otherAssessments = relevant
@@ -442,67 +439,117 @@ export class HivePipeline {
       return parts.join("\n")
     }
 
-    // Execute waves sequentially, domains within wave in parallel
-    progress(`🚀 执行中... (0/${relevantDomains.length})`)
-    this.log("dispatch", `🚀 开始执行 ${waves.length} 个波次...`)
-    for (let waveIdx = 0; waveIdx < waves.length; waveIdx++) {
-      const wave = waves[waveIdx]
-      this.log("dispatch", `Wave ${waveIdx + 1}/${waves.length}: ${wave.join(", ")}`)
+    const partitions = partitionByConnectedComponents(relevantDomains, domainMap)
+    if (partitions.length > 1) {
+      this.log("dispatch", `🔀 ${partitions.length} 个独立分区并行执行: [${partitions.map(p => p.join(",")).join(" | ")}]`)
+    }
 
-      const waveResults = await Promise.allSettled(
-        wave.map(async (domainId) => {
-          const domain = this.domains.find((d) => d.id === domainId)!
-          const execTitle = `Hive·${domain.name}·执行`
-          // Reuse assess session if exists for this domain
-          let sessionId: string
-          const existingSessionId = assessSessionMap.get(domainId)
-          if (existingSessionId) {
-            sessionId = existingSessionId
-          } else {
-            const session = await this.client.session.create({
-              body: { title: execTitle, parentID: parentSessionId },
-              query: { directory },
+    const dispatchPartition = async (partitionIds: string[], pIdx: number) => {
+      const pLabel = partitions.length > 1 ? `[P${pIdx + 1}] ` : ""
+      const partSet = new Set(partitionIds)
+
+      const partDeps = new Map<string, string[]>()
+      this.domains.forEach((d) => {
+        if (!partSet.has(d.id)) return
+        partDeps.set(d.id, d.dependencies.filter((dep) => partSet.has(dep)))
+      })
+      const partAdj = new Map<string, string[]>()
+      this.domains.forEach((d) => {
+        if (!partSet.has(d.id)) return
+        partAdj.set(d.id, [])
+      })
+      this.domains.forEach((d) => {
+        if (!partSet.has(d.id)) return
+        d.dependencies.forEach((dep) => {
+          if (partSet.has(dep)) {
+            const arr = partAdj.get(dep) ?? []
+            arr.push(d.id)
+            partAdj.set(dep, arr)
+          }
+        })
+      })
+
+      const partIndegree = new Map<string, number>()
+      partitionIds.forEach((id) => partIndegree.set(id, (partDeps.get(id) ?? []).length))
+      let queue = partitionIds.filter((id) => (partDeps.get(id) ?? []).length === 0)
+      const waves: string[][] = []
+      while (queue.length > 0) {
+        const thisWave = [...queue]
+        waves.push(thisWave)
+        const next: string[] = []
+        for (const u of thisWave) {
+          for (const v of partAdj.get(u) ?? []) {
+            const cnt = (partIndegree.get(v) ?? 0) - 1
+            partIndegree.set(v, cnt)
+            if (cnt === 0) next.push(v)
+          }
+        }
+        queue = next
+      }
+
+      this.log("dispatch", `${pLabel}${waves.length} 个波次: ${waves.map(w => w.join(",")).join(" → ")}`)
+
+      for (let waveIdx = 0; waveIdx < waves.length; waveIdx++) {
+        const wave = waves[waveIdx]
+        this.log("dispatch", `${pLabel}Wave ${waveIdx + 1}/${waves.length}: ${wave.join(", ")}`)
+
+        const waveResults = await Promise.allSettled(
+          wave.map(async (domainId) => {
+            const domain = this.domains.find((d) => d.id === domainId)!
+            const execTitle = `Hive·${domain.name}·执行`
+            let sessionId: string
+            const existingSessionId = assessSessionMap.get(domainId)
+            if (existingSessionId) {
+              sessionId = existingSessionId
+            } else {
+              const session = await this.client.session.create({
+                body: { title: execTitle, parentID: parentSessionId },
+                query: { directory },
+              })
+              sessionId = session.data!.id
+              assessSessionMap.set(domainId, sessionId)
+            }
+            this.sessionToDomain.set(sessionId, domainId)
+            this.trackSession(sessionId, domainId, "dispatch", execTitle)
+            this.currentPipeline!.dispatched.push({ domain: domainId, status: "running", sessionId })
+            const instruction = buildInstruction(domainId)
+            const resp = await this.client.session.prompt({
+              path: { id: sessionId },
+              body: { agent: domainId, parts: [{ type: "text" as const, text: instruction }] },
             })
-            sessionId = session.data!.id
-            assessSessionMap.set(domainId, sessionId)
-          }
-          this.sessionToDomain.set(sessionId, domainId)
-          this.trackSession(sessionId, domainId, "dispatch", execTitle)
-          this.currentPipeline!.dispatched.push({ domain: domainId, status: "running", sessionId })
-          const instruction = buildInstruction(domainId)
-          const resp = await this.client.session.prompt({
-            path: { id: sessionId },
-            body: { agent: domainId, parts: [{ type: "text" as const, text: instruction }] },
-          })
-          return { domainId, text: this.extractText(resp.data?.parts ?? []) }
-        }),
-      )
+            return { domainId, text: this.extractText(resp.data?.parts ?? []) }
+          }),
+        )
 
-      for (const result of waveResults) {
-        if (result.status === "fulfilled") {
-          const { domainId, text } = result.value
-          const entry = this.currentPipeline!.dispatched.find((d) => d.domain === domainId)
-          if (entry) {
-            entry.status = "completed"
-            entry.response = text
-          }
-          const dispatched = this.currentPipeline!.dispatched.filter((d) => d.status === "completed" || d.status === "failed").length
-          progress(`🚀 执行中... (${dispatched}/${relevantDomains.length}) ✅ @${domainId}`)
-          this.log("dispatch", `✅ @${domainId} 执行完成`, domainId)
-        } else {
-          const errMsg = result.reason instanceof Error ? result.reason.message : String(result.reason)
-          this.log("dispatch", `❌ Wave ${waveIdx + 1} 中有域执行失败: ${errMsg}`)
-          // Mark any still-running entries as failed
-          for (const domainId of wave) {
-            const entry = this.currentPipeline!.dispatched.find((d) => d.domain === domainId && d.status === "running")
+        for (const result of waveResults) {
+          if (result.status === "fulfilled") {
+            const { domainId, text } = result.value
+            const entry = this.currentPipeline!.dispatched.find((d) => d.domain === domainId)
             if (entry) {
-              entry.status = "failed"
-              entry.response = errMsg
+              entry.status = "completed"
+              entry.response = text
+            }
+            const dispatched = this.currentPipeline!.dispatched.filter((d) => d.status === "completed" || d.status === "failed").length
+            progress(`🚀 执行中... (${dispatched}/${relevantDomains.length}) ${pLabel}✅ @${domainId}`)
+            this.log("dispatch", `${pLabel}✅ @${domainId} 执行完成`, domainId)
+          } else {
+            const errMsg = result.reason instanceof Error ? result.reason.message : String(result.reason)
+            this.log("dispatch", `${pLabel}❌ Wave ${waveIdx + 1} 中有域执行失败: ${errMsg}`)
+            for (const domainId of wave) {
+              const entry = this.currentPipeline!.dispatched.find((d) => d.domain === domainId && d.status === "running")
+              if (entry) {
+                entry.status = "failed"
+                entry.response = errMsg
+              }
             }
           }
         }
       }
     }
+
+    progress(`🚀 执行中... (0/${relevantDomains.length})`)
+    this.log("dispatch", `🚀 开始执行 ${relevantDomains.length} 个域 (${partitions.length} 个分区)...`)
+    await Promise.allSettled(partitions.map((p, i) => dispatchPartition(p, i)))
 
     // Phase 5: Verify
     const succeeded = this.currentPipeline!.dispatched.filter((d) => d.status === "completed")
