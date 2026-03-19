@@ -1,6 +1,6 @@
 import type { Agent, AgentConfig } from "sjz-opencode-sdk"
 import type { Domain, HiveConfig } from "../types"
-import { buildDomainPrompt, buildQueenPrompt } from "./prompts"
+import { buildDomainPrompt, buildProjectDomainPrompt, buildQueenPrompt } from "./prompts"
 
 const COLORS = [
   "#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6",
@@ -25,6 +25,17 @@ export function generateAgents(
     queenConfig.model = config.queen.model
   }
   agents["queen"] = queenConfig
+
+  if (!domains.some(d => d.id === "project")) {
+    agents["project"] = {
+      name: "project",
+      description: "Project — 项目级通用域：根目录配置、共享代码、新模块、跨域杂项",
+      mode: "subagent",
+      color: "#6B7280",
+      prompt: buildProjectDomainPrompt(domains),
+      tools: { read: true, write: true, edit: true, bash: true, grep: true, glob: true, lsp: true, task: false, todo: true, question: false },
+    }
+  }
 
   for (let i = 0; i < domains.length; i++) {
     const domain = domains[i]

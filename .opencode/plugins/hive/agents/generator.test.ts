@@ -46,9 +46,11 @@ describe("generateAgents", () => {
     expect(agents["backend"].mode).toBe("subagent")
   })
 
-  test("total agents = queen + domains", () => {
+  test("total agents = queen + project + domains", () => {
     const agents = generateAgents(MOCK_DOMAINS, config)
-    expect(Object.keys(agents)).toHaveLength(3)
+    expect(Object.keys(agents)).toHaveLength(4)
+    expect(agents["project"]).toBeDefined()
+    expect(agents["project"].mode).toBe("subagent")
   })
 
   test("each agent has non-empty prompt containing domain info", () => {

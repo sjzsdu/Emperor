@@ -35,8 +35,9 @@ describe("Hive integration", () => {
     const config = loadConfig("/nonexistent")
     const agents = generateAgents(MOCK_DOMAINS, config)
 
-    // Queen + 2 domains = 3 agents
-    expect(Object.keys(agents)).toHaveLength(3)
+    // Queen + project + 2 domains = 4 agents
+    expect(Object.keys(agents)).toHaveLength(4)
+    expect(agents["project"]).toBeDefined()
     expect(agents["queen"]).toBeDefined()
     expect(agents["queen"].mode).toBe("primary")
     expect(agents["frontend"]).toBeDefined()

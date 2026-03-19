@@ -248,11 +248,25 @@ export class HivePipeline {
     const relevantDomains = relevant.map((r) => r.domain)
     this.log("filter", `筛选出 ${relevantDomains.length} 个相关域: ${relevantDomains.join(", ") || "无"}`)
     if (relevantDomains.length === 0) {
-      this.currentPipeline!.status = "completed"
-      this.currentPipeline!.completedAt = Date.now()
-      this.eventBus.publish({ type: "pipeline_completed", source: "queen", target: "*", payload: { message: `Pipeline completed: no relevant domains` } })
-      const duration = (Date.now() - startedAt) / 1000
-      return `# Hive Pipeline\n\n没有发现相关域。耗时 ${duration.toFixed(2)}s`
+      const hasProject = this.domains.some(d => d.id === "project")
+      if (hasProject) {
+        const projectAssessment = this.currentPipeline!.assessments.find(a => a.domain === "project")
+        if (projectAssessment) {
+          projectAssessment.relevance = "高"
+          projectAssessment.analysis = projectAssessment.analysis || "兜底：无专业域认领此需求，由 project 域处理"
+        } else {
+          this.currentPipeline!.assessments.push({ domain: "project", relevance: "高", analysis: "兜底：无专业域认领此需求", workload: "中" })
+        }
+        relevant.push(this.currentPipeline!.assessments.find(a => a.domain === "project")!)
+        relevantDomains.push("project")
+        this.log("filter", `⚡ 无专业域认领，project 域兜底`)
+      } else {
+        this.currentPipeline!.status = "completed"
+        this.currentPipeline!.completedAt = Date.now()
+        this.eventBus.publish({ type: "pipeline_completed", source: "queen", target: "*", payload: { message: `Pipeline completed: no relevant domains` } })
+        const duration = (Date.now() - startedAt) / 1000
+        return `# Hive Pipeline\n\n没有发现相关域。耗时 ${duration.toFixed(2)}s`
+      }
     }
 
     // Phase 3: Negotiate (real dialog between dependent domains)

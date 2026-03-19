@@ -1,4 +1,5 @@
 import type { Plugin } from "sjz-opencode-sdk"
+import type { Domain } from "./types"
 import { loadConfig } from "./config"
 import { HiveEventBus } from "./eventbus/bus"
 import { discoverDomains, reloadDomains } from "./discovery/index"
@@ -31,7 +32,22 @@ export const HivePlugin: Plugin = async ({ client, directory, registerAgent, reg
   // Session → Domain mapping
   const sessionToDomain = new Map<string, string>()
 
-  const domains = discoverDomains(directory, config, registerAgent)
+  const discoveredDomains = discoverDomains(directory, config, registerAgent)
+
+  const PROJECT_DOMAIN: Domain = {
+    id: "project",
+    name: "Project",
+    description: "项目级通用域：根目录配置、共享代码、新模块初始化、跨域杂项",
+    paths: [],
+    techStack: "",
+    responsibilities: "根目录配置文件、共享工具代码、新模块搭建、不属于任何专业域的任务",
+    interfaces: [],
+    dependencies: [],
+    conventions: [],
+  }
+  const domains = discoveredDomains.some(d => d.id === "project")
+    ? discoveredDomains
+    : [PROJECT_DOMAIN, ...discoveredDomains]
 
   // Subscribe domains to EventBus
   for (const domain of domains) {
@@ -84,103 +100,159 @@ $ARGUMENTS (如 --force 表示强制覆盖)
 ### 3. 创建存储目录 .hive
 
 ### 4. 发现并生成 domains.json
-基于当前项目目录结构,自动发现 Domain 并生成 .hive/domains.json
 
 #### 4.1 分析项目结构
-使用 bash 工具列出项目根目录下的所有目录和文件:
-- ls -la
 
-分析以下内容:
-1. package.json - 检测使用的技术栈 (dependencies, devDependencies),项目名称,版本
-2. pnpm-workspace.yaml 或 workspaces 配置 - 检测 monorepo 结构
-3. 根目录下的主要目录: src/, apps/, packages/, docs/, .github/
-4. README.md - 读取项目描述,了解项目整体目标和功能
-5. tsconfig.json - 了解 TypeScript 配置
+首先识别项目的语言、构建系统和整体架构。
 
-#### 4.2 发现 Domain 规则
-根据以下规则自动发现 Domain:
+**Step 1: 读取关键文件**
+用 bash 列出根目录结构 (ls -la)，然后读取以下文件（如果存在）：
+- README.md — 项目描述和功能
+- 构建配置（见下方语言检测表）
+- docs/ 目录下的架构文档
 
-**Frontend 检测:**
-- 目录: src/client, src/frontend, client, frontend, src/ui, src/components, src/pages, src/views
-- 技术栈: React, Vue, Angular, Next.js, Nuxt (根据 package.json)
-- paths: 匹配找到的目录
+**Step 2: 识别语言和构建系统**
 
-**Backend/API 检测:**
-- 目录: src/server, src/backend, server, backend, src/api, src/routes
-- 技术栈: Express, Fastify, Hono, NestJS, Koa (根据 package.json)
-- paths: 匹配找到的目录
+| 标志文件 | 语言/生态 | 额外检测 |
+|----------|----------|---------|
+| package.json | JavaScript/TypeScript | 检查 workspaces、dependencies |
+| go.mod | Go | 检查 cmd/, internal/, pkg/ 目录 |
+| Cargo.toml | Rust | 检查 workspace members、crates/ 目录 |
+| pyproject.toml / setup.py / requirements.txt | Python | 检查 src/, app/, tests/ 目录 |
+| pom.xml / build.gradle / build.gradle.kts | Java/Kotlin | 检查 src/main/java, modules/ 目录 |
+| *.csproj / *.sln | C# / .NET | 检查 src/, Controllers/, Services/ |
+| CMakeLists.txt / Makefile | C/C++ | 检查 src/, include/, lib/ 目录 |
+| mix.exs | Elixir | 检查 lib/, priv/ 目录 |
+| pubspec.yaml | Dart/Flutter | 检查 lib/, test/ 目录 |
 
-**Monorepo Apps 检测:**
-- apps/ 目录下的每个子目录 → 独立 Domain
-- packages/ 目录下的每个子目录 → 独立 Domain
-- 每个 package 的 package.json 中的 name 和 description 作为 Domain 的 name 和 description
+如果同时存在多种标志文件，说明是多语言项目，每种语言可能对应不同的 Domain。
 
-**Infra 检测:**
-- 存在 .github/workflows, Dockerfile, docker-compose.yml → infra Domain
-- 技术栈: Docker, GitHub Actions, Kubernetes
-- paths: [".github/", "Dockerfile", "docker-compose.yml", "docker-compose.yaml"]
+#### 4.2 Domain 发现方法论
 
-**Docs 检测:**
-- 存在 docs/ 目录 → docs Domain
-- 技术栈: Markdown, Docusaurus, VitePress
-- paths: ["docs/", "*.md"]
+Domain 的本质是"一个相对独立的职责单元，有明确的代码边界"。发现 Domain 的核心方法：
 
-**Shared/Common 检测:**
-- 存在 src/shared, src/common, src/lib, src/utils, src/types → shared Domain
+**方法 1: 模块边界发现**
+寻找项目中自然存在的模块边界：
+- Monorepo workspace 中的每个 package/app → 独立 Domain
+- 编程语言的模块系统（Go 的 internal package、Rust 的 crate、Java 的 module）
+- 顶层目录的职责划分（cmd/ vs lib/ vs web/）
 
-**Database 检测:**
-- 存在 src/db, src/models, prisma/, migrations/, src/schema → database Domain
-- 技术栈: PostgreSQL, MySQL, MongoDB, Prisma, Mongoose, Drizzle
+**方法 2: 职责分层发现**
+按软件架构分层寻找边界：
+- 表现层（UI、CLI、API handler）
+- 业务逻辑层（service、usecase、domain model）
+- 数据层（repository、database、migration）
+- 基础设施层（CI/CD、部署、监控）
 
-**Config 检测:**
-- 存在 .github/, .eslintrc, .prettierrc, tsconfig.json → config Domain
+**方法 3: 技术栈分界发现**
+不同技术栈的代码自然形成边界：
+- 前端代码（React/Vue/Template）vs 后端代码（API server）
+- 应用代码 vs 基础设施代码（Dockerfile、Terraform、Helm）
+- 主应用 vs SDK/库代码
 
-**Tests 检测:**
-- 存在 tests/, __tests__, test/, *.test.ts, *.spec.ts → testing Domain
-- 技术栈: Jest, Vitest, Mocha, Playwright, Cypress
+#### 4.3 各语言发现示例
 
-#### 4.3 生成 domains.json 格式
-生成 DomainCache 格式的 JSON 文件,结构如下:
+以下是不同语言项目的 Domain 发现参考，实际分析时根据项目结构灵活判断，不要生搬硬套：
 
-- structureHash: 计算的项目结构 hash
-- discoveredAt: 当前时间戳
-- source: "static"
-- domains: 数组,每个元素包含:
-  - id: 唯一标识
-  - name: 显示名称
-  - description: 一句话描述
-  - paths: 文件路径模式
-  - techStack: 技术栈
-  - responsibilities: 详细职责描述
-  - interfaces: 暴露的接口
-  - dependencies: 依赖的其他 domain
-  - conventions: 代码约定
+**Go 项目:**
+- cmd/ 下的每个子目录 → 独立的可执行文件 Domain（如 cmd/api, cmd/worker）
+- internal/ → 内部业务逻辑 Domain（可按子目录拆分）
+- pkg/ → 共享库 Domain
+- migrations/ → 数据库 Domain
+- 识别依据: go.mod, go.sum, cmd/ 目录结构
 
-#### 4.4 宏观项目认知
-每个 Domain 需要从项目整体角度认知:
-1. **项目目标**: 从 README.md 提取项目是做什么的
-2. **Domain 角色**: 这个 domain 在整个项目中扮演什么角色
-3. **与其他 Domain 的关系**: 依赖哪些 domain,被哪些 domain 依赖
-4. **维护要点**: 这个 domain 的代码需要关注什么(性能?安全?一致性?)
+**Rust 项目:**
+- crates/ 或 workspace members → 每个 crate 一个 Domain
+- src/lib.rs + src/main.rs → 单 crate 项目可按模块拆分
+- 识别依据: Cargo.toml [workspace] 配置
 
-**示例 (假设这是一个全栈 React + Node.js 项目):**
-- frontend: "负责用户界面渲染,与后端 API 交互,关注用户体验和交互流畅性"
-- backend: "负责业务逻辑处理和数据持久化,提供 RESTful API,关注安全性和性能"
-- database: "负责数据模型设计和迁移,保证数据完整性和一致性"
+**Python 项目:**
+- src/app/ 或项目名目录 → 主应用 Domain
+- tests/ → 测试 Domain
+- alembic/migrations/ → 数据库 Domain
+- 如果是 Django: 每个 app → 独立 Domain
+- 如果是 FastAPI: routers/ 按业务拆分
+- 识别依据: pyproject.toml, setup.py, manage.py (Django)
 
-#### 4.5 读取 README 补充描述
-必须读取以下文件来补充 Domain 信息:
-1. 项目根目录 README.md - 提取项目整体描述和功能
-2. docs/ 目录下的文档 - 了解架构设计和领域划分
-3. 各个 domain 目录下的 README.md - 补充具体领域描述
+**Java/Kotlin 项目:**
+- 多模块 Maven/Gradle: 每个 module → 独立 Domain
+- 单模块: 按 package 层级拆分（controller, service, repository）
+- 识别依据: pom.xml <modules>, settings.gradle
+
+**JavaScript/TypeScript 项目:**
+- Monorepo: apps/ 和 packages/ 下的每个包 → 独立 Domain
+- 全栈: 前端目录(client/frontend/src/pages) vs 后端目录(server/api/src/routes)
+- 识别依据: package.json workspaces, pnpm-workspace.yaml
+
+**通用 Domain（所有语言适用）:**
+- 存在 .github/workflows, Dockerfile, Makefile → infra Domain
+- 存在 docs/ → docs Domain
+- 存在 **/migrations/, **/schema/ → database Domain
+
+#### 4.4 必须生成 project Domain
+
+无论发现了多少个专业域，domains.json 中必须包含一个 id 为 "project" 的 Domain。它是项目级兜底域，负责所有不属于其他专业域的内容。
+
+根据对项目的实际分析，填写 project Domain 的字段：
+
+{
+  "id": "project",
+  "name": "Project",
+  "description": "基于对项目的实际分析，写一句话描述项目级通用域的职责",
+  "paths": [],
+  "techStack": "填写项目的主要技术栈",
+  "responsibilities": "根目录配置文件、共享工具代码、不属于任何专业域的模块。具体列出你发现的根目录文件和共享目录",
+  "interfaces": [],
+  "dependencies": [],
+  "conventions": ["从项目中发现的代码约定，如 linter 配置、命名风格等"]
+}
+
+#### 4.5 生成 domains.json 格式
+
+生成 DomainCache 格式的 JSON 文件写入 .hive/domains.json:
+
+{
+  "structureHash": "基于目录结构计算的 hash（8位十六进制）",
+  "discoveredAt": 当前时间戳(毫秒),
+  "source": "static",
+  "domains": [
+    {
+      "id": "唯一标识（小写字母+连字符）",
+      "name": "显示名称",
+      "description": "从项目宏观视角描述这个 Domain 的角色和职责",
+      "paths": ["该 Domain 管辖的文件路径"],
+      "techStack": "使用的技术栈",
+      "responsibilities": "详细职责描述",
+      "interfaces": ["对外暴露的接口：API 端点、导出的函数/类型、CLI 命令等"],
+      "dependencies": ["依赖的其他 domain 的 id"],
+      "conventions": ["代码约定：命名风格、架构模式、lint 规则等"]
+    }
+  ]
+}
+
+#### 4.6 宏观项目认知
+
+每个 Domain 的 description 和 responsibilities 必须体现对项目整体的理解，而不是泛泛的模板化描述。
+
+**好的描述（体现项目理解）：**
+- "负责用户认证和授权流程，为前端提供 JWT token，与 user-service 协作管理会话"
+- "Go API 网关，处理 HTTP 路由和中间件，调用 internal/service 层的业务逻辑"
+- "Rust 核心引擎 crate，实现文件解析和 AST 转换，被 cli 和 wasm crate 依赖"
+
+**差的描述（模板化废话）：**
+- "负责后端逻辑"
+- "Frontend application"
+- "Database domain"
+
+必须读取 README.md、docs/ 目录和各模块代码来补充具体描述。
 
 ### 5. 完成并报告
 - 使用 bash 和 write 工具完成上述任务
-- 完成后报告初始化结果,包括:
-  - 创建/覆盖的文件 (.opencode/hive.json, .hive/domains.json)
+- 完成后报告初始化结果:
+  - 创建/覆盖的文件
   - 发现的 Domain 数量和名称
   - 每个 Domain 的 paths, techStack, responsibilities, dependencies
-  - 项目的整体目标描述 (一句话)
+  - 项目的主语言和整体目标（一句话）
       `.trim(),
     })
   } catch (error) {
